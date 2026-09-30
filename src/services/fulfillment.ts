@@ -1,4 +1,0 @@
-import{Lane,Worker,Order}from"../types";
-export function tasksForWorker(order:Order,worker:Worker,lanes:Lane[]){return order.items.filter(i=>worker.laneIds.includes(i.laneId))}
-export function orderProgress(order:Order){const total=order.items.reduce((n,i)=>n+i.quantity,0);const picked=order.items.reduce((n,i)=>n+i.picked,0);return{total,picked,complete:total>0&&picked>=total}}
-export function laneProgress(order:Order,laneId:string){const items=order.items.filter(i=>i.laneId===laneId);const total=items.reduce((n,i)=>n+i.quantity,0);const picked=items.reduce((n,i)=>n+i.picked,0);return{total,picked,complete:total>0&&picked>=total}}
