@@ -37,3 +37,10 @@ npm run dev -- --host 0.0.0.0
 Lane intentionally does **not** contain a vendor dashboard, store management, lanes/departments, restocking, packing workflow, or order-management dashboard. Those responsibilities stay in the Vendor Portal.
 
 Lane is only the worker's picking interface.
+
+
+## Supabase worker setup
+
+Lane now uses Supabase for worker authentication, assignments, picking status and history. Apply the migration at supabase/migrations/20260930000000_vendor_worker_picking.sql to the shared Rivo Supabase project before testing the live flow.
+
+Create a worker's Supabase Auth email/password account, then create the matching vendor_workers row with that user's Auth UUID, the vendor UUID and the worker name. The Vendor Portal Lane Picking page assigns order items to that worker. No service-role key is used by either frontend.
