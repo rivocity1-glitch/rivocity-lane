@@ -17,7 +17,7 @@ export default function App(){
  const myTasks=useMemo(()=>state.tasks.filter(t=>t.workerId===worker.id&&t.status!=="completed"),[state.tasks,worker.id]);
  const history=useMemo(()=>state.tasks.filter(t=>t.workerId===worker.id&&t.status==="completed").sort((a,b)=>b.completedAt.localeCompare(a.completedAt)),[state.tasks,worker.id]);
  const completedCount=history.reduce((n,t)=>n+t.quantity,0);
- function markPicked(id:string){setState(s=>({...s,tasks:s.tasks.map(t=>t.id===id?t.status==="completed"?t:{...t,status:"completed",completedAt:new Date().toISOString()}:t)}));}
+ function markPicked(id:string){setState(s=>{const task=s.tasks.find(t=>t.id===id);if(!task||task.status==="completed")return s;return{workers:s.workers.map(w=>w.id===task.workerId?{...w,itemsPicked:w.itemsPicked+task.quantity}:w),tasks:s.tasks.map(t=>t.id===id?{...t,status:"completed",completedAt:new Date().toISOString()}:t)}});}
  function reset(){setState(initial);setWorkerId(initial.workers[0]?.id??"w1");setTab("picks");}
  return <div className="min-h-screen bg-slate-50 text-slate-900">
   <header className="sticky top-0 z-20 bg-white border-b"><div className="max-w-xl mx-auto px-4 h-16 flex items-center justify-between"><div><div className="font-black text-xl tracking-tight">RivoCity <span className="text-emerald-600">Lane</span></div><div className="text-[10px] text-slate-400 font-bold tracking-widest">PICKING</div></div><div className="w-9 h-9 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center"><UserRound size={18}/></div></div></header>
