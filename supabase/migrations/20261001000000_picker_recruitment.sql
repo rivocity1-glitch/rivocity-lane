@@ -227,6 +227,16 @@ begin
     raise exception 'Picker application is not approved';
   end if;
 
+  if exists (
+    select 1
+    from public.vendor_workers w
+    where w.auth_user_id = v_picker.auth_user_id
+      and w.status = 'active'
+      and w.vendor_id <> v_request.vendor_id
+  ) then
+    raise exception 'Picker is already assigned to another vendor';
+  end if;
+
   update public.picker_vendor_requests
   set status = 'accepted',
       responded_at = now(),
