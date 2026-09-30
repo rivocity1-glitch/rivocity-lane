@@ -175,6 +175,7 @@ with check (
     select 1 from public.vendors v
     where v.id = picker_vendor_requests.vendor_id
       and v.auth_user_id = (select auth.uid())
+  )
 );
 
 drop policy if exists "Admins can read picker requests" on public.picker_vendor_requests;
