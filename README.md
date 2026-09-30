@@ -1,6 +1,6 @@
-# RivoCity Lane
+# RivoCity Picker
 
-RivoCity Lane is a small worker-facing PWA for one job: **show a specific worker what they need to pick and record what they picked**.
+RivoCity Picker is a small worker-facing PWA for one job: **show a specific worker what they need to pick and record what they picked**.
 
 ## Worker flow
 
@@ -9,16 +9,16 @@ RivoCity Lane is a small worker-facing PWA for one job: **show a specific worker
 3. Each item shows the order number, product and quantity.
 4. Worker taps **Mark Picked**.
 5. Completed picks remain in Supabase and appear in History.
-6. Picking totals are calculated from completed Lane tasks for future incentive calculations.
+6. Picking totals are calculated from completed picking tasks for future incentive calculations.
 
 ## Vendor flow
 
-The Vendor Portal has a **RivoCity Lane** page.
+The Vendor Portal has a **RivoCity Picker** page.
 
-1. Vendor opens Lane Picking.
+1. Vendor opens Picker.
 2. Vendor sees the vendor's current order items.
-3. Vendor assigns an item to an active Lane worker.
-4. The worker immediately receives that assignment in RivoCity Lane through Supabase Realtime.
+3. Vendor assigns an item to an active Picker worker.
+4. The worker immediately receives that assignment in RivoCity Picker through Supabase Realtime.
 5. When the worker marks the item picked, the Vendor Portal reflects the picked status.
 
 ## Supabase setup
@@ -29,7 +29,7 @@ This repository contains the migration:
 
 Apply that migration to the shared Rivo Supabase project before testing the live integration.
 
-Lane requires these Vite variables:
+Picker requires these Vite variables:
 
 `VITE_SUPABASE_URL`
 `VITE_SUPABASE_ANON_KEY`
@@ -60,6 +60,6 @@ npm run dev -- --host 0.0.0.0
 
 ## Scope
 
-Lane intentionally does **not** contain a vendor dashboard, store management, lanes/departments, restocking, packing workflow, or order-management dashboard.
+Picker intentionally does **not** contain a vendor dashboard, store management, lanes/departments, restocking, packing workflow, or order-management dashboard.
 
-Lane is only the worker's picking interface.
+Picker is only the worker's picking interface.
