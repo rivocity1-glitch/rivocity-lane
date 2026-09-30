@@ -4,18 +4,46 @@ RivoCity Lane is a small worker-facing PWA for one job: **show a specific worker
 
 ## Worker flow
 
-1. Worker opens RivoCity Lane.
-2. Worker sees only items assigned to their profile.
+1. Worker signs in with the Supabase Auth account linked to their worker profile.
+2. Worker sees only items assigned to that worker.
 3. Each item shows the order number, product and quantity.
 4. Worker taps **Mark Picked**.
-5. Completed picks move to History.
-6. Worker Profile keeps a simple picking record for future incentive calculations.
+5. Completed picks remain in Supabase and appear in History.
+6. Picking totals are calculated from completed Lane tasks for future incentive calculations.
 
-## Current local/demo mode
+## Vendor flow
 
-The repository currently uses demo data and browser localStorage so the picking flow can be tested without changing the production Supabase database.
+The Vendor Portal has a **RivoCity Lane** page.
 
-The Profile tab includes a demo worker selector. Production authentication and task assignment will identify the worker from the existing RivoCity backend.
+1. Vendor opens Lane Picking.
+2. Vendor sees the vendor's current order items.
+3. Vendor assigns an item to an active Lane worker.
+4. The worker immediately receives that assignment in RivoCity Lane through Supabase Realtime.
+5. When the worker marks the item picked, the Vendor Portal reflects the picked status.
+
+## Supabase setup
+
+This repository contains the migration:
+
+`supabase/migrations/20260930000000_vendor_worker_picking.sql`
+
+Apply that migration to the shared Rivo Supabase project before testing the live integration.
+
+Lane requires these Vite variables:
+
+`VITE_SUPABASE_URL`
+`VITE_SUPABASE_ANON_KEY`
+
+Create a worker's Supabase Auth email/password account, then create a matching `vendor_workers` row containing:
+
+- the vendor UUID
+- the worker Auth UUID
+- the worker name
+- active status
+
+The Vendor Portal can then assign order items to that worker.
+
+No service-role key is used by either frontend.
 
 ## Run locally
 
@@ -23,8 +51,6 @@ The Profile tab includes a demo worker selector. Production authentication and t
 npm install
 npm run dev
 ```
-
-Open the Vite local URL shown in the terminal.
 
 For phone testing on the same Wi-Fi:
 
@@ -34,13 +60,6 @@ npm run dev -- --host 0.0.0.0
 
 ## Scope
 
-Lane intentionally does **not** contain a vendor dashboard, store management, lanes/departments, restocking, packing workflow, or order-management dashboard. Those responsibilities stay in the Vendor Portal.
+Lane intentionally does **not** contain a vendor dashboard, store management, lanes/departments, restocking, packing workflow, or order-management dashboard.
 
 Lane is only the worker's picking interface.
-
-
-## Supabase worker setup
-
-Lane now uses Supabase for worker authentication, assignments, picking status and history. Apply the migration at supabase/migrations/20260930000000_vendor_worker_picking.sql to the shared Rivo Supabase project before testing the live flow.
-
-Create a worker's Supabase Auth email/password account, then create the matching vendor_workers row with that user's Auth UUID, the vendor UUID and the worker name. The Vendor Portal Lane Picking page assigns order items to that worker. No service-role key is used by either frontend.
