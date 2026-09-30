@@ -1,1 +1,1 @@
-self.addEventListener("install",e=>self.skipWaiting());self.addEventListener("activate",e=>self.clients.claim());self.addEventListener("fetch",()=>{});
+self.addEventListener("install",event=>{self.skipWaiting();event.waitUntil(caches.open("rivocity-lane-v1").then(cache=>cache.addAll(["/","/manifest.webmanifest"])))});self.addEventListener("activate",event=>{event.waitUntil(self.clients.claim())});self.addEventListener("fetch",event=>{event.respondWith(caches.match(event.request).then(cached=>cached||fetch(event.request)))})
