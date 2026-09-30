@@ -30,7 +30,7 @@ export default function App(){
   setLoading(false);
  };
 
- useEffect(()=>{refresh().catch(e=>{console.error(e);setError(e.message||"Failed to load Lane.");setLoading(false);});const{data:{subscription}}=supabase.auth.onAuthStateChange(()=>refresh().catch(e=>{console.error(e);setError(e.message||"Failed to refresh Lane.");}));return()=>subscription.unsubscribe();},[]);
+ useEffect(()=>{refresh().catch(e=>{console.error(e);setError(e.message||"Failed to load Picker.");setLoading(false);});const{data:{subscription}}=supabase.auth.onAuthStateChange(()=>refresh().catch(e=>{console.error(e);setError(e.message||"Failed to refresh Picker.");}));return()=>subscription.unsubscribe();},[]);
 
  useEffect(()=>{if(!sessionWorker)return;const channel=supabase.channel(`lane-worker-${sessionWorker.id}`).on("postgres_changes",{event:"*",schema:"public",table:"order_item_picking_tasks",filter:`worker_id=eq.${sessionWorker.id}`},()=>refresh().catch(e=>console.error(e))).subscribe();return()=>{supabase.removeChannel(channel)}},[sessionWorker?.id]);
 
@@ -50,7 +50,7 @@ export default function App(){
  async function signIn(e:React.FormEvent){e.preventDefault();setSigningIn(true);setError(null);const{error}=await supabase.auth.signInWithPassword({email:email.trim(),password});if(error)setError(error.message);setSigningIn(false)}
  async function signOut(){await supabase.auth.signOut();setSessionWorker(null);setTasks([])}
 
- if(loading)return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm font-bold text-slate-500">Loading RivoCity Lane…</div>;
+ if(loading)return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm font-bold text-slate-500">Loading RivoCity Picker…</div>;
 
  if(!sessionWorker)return <Login email={email} password={password} setEmail={setEmail} setPassword={setPassword} onSubmit={signIn} signingIn={signingIn} error={error}/>;
 
@@ -89,7 +89,7 @@ function TaskCard({task,onPick}:{task:Task;onPick:(id:string)=>void}){return <ar
 
 function HistoryView({tasks,completedCount}:{tasks:Task[];completedCount:number}){return <section className="space-y-4">
  <div><p className="text-sm text-slate-500">Your completed picks</p><h1 className="text-2xl font-black">History</h1></div>
- <div className="bg-white border rounded-2xl p-4"><p className="text-xs text-slate-500">TOTAL ITEMS PICKED</p><p className="text-3xl font-black mt-1">{completedCount}</p><p className="text-xs text-slate-400 mt-1">Recorded from completed Lane tasks.</p></div>
+ <div className="bg-white border rounded-2xl p-4"><p className="text-xs text-slate-500">TOTAL ITEMS PICKED</p><p className="text-3xl font-black mt-1">{completedCount}</p><p className="text-xs text-slate-400 mt-1">Recorded from completed picking tasks.</p></div>
  {tasks.length===0&&<div className="bg-white border rounded-2xl p-6 text-center text-sm text-slate-500">No completed picks yet.</div>}
  {tasks.map(task=><div key={task.id} className="bg-white border rounded-xl p-4 flex justify-between items-center"><div><div className="font-bold">{task.productName}</div><div className="text-xs text-slate-500">Order {task.orderNumber} · Qty {task.quantity}</div></div><Check size={19} className="text-emerald-600"/></div>)}
  </section>}
