@@ -80,25 +80,10 @@ begin
     nullif(new.raw_user_meta_data ->> 'latitude', '')::double precision,
     nullif(new.raw_user_meta_data ->> 'longitude', '')::double precision,
     'offline',
-    case when v_source = 'vendor' then 'approved' else 'pending' end,
+    'pending',
     v_source,
     v_vendor_id
   );
-
-  if v_source = 'vendor' and v_vendor_id is not null then
-    insert into public.vendor_workers (
-      vendor_id,
-      auth_user_id,
-      worker_name,
-      status
-    )
-    values (
-      v_vendor_id,
-      new.id,
-      coalesce(new.raw_user_meta_data ->> 'full_name', 'Picker'),
-      'active'
-    );
-  end if;
 
   return new;
 end;
@@ -120,6 +105,47 @@ for select
 to authenticated
 using (
   created_by_vendor_id = (
+    select v.id
+    from public.vendors v
+    where v.auth_user_id = auth.uid()
+    limit 1
+  )
+);
+
+
+-- Vendor can approve only Pickers it created.
+drop policy if exists "Vendors can approve their created pickers" on public.picker_profiles;
+
+create policy "Vendors can approve their created pickers"
+on public.picker_profiles
+for update
+to authenticated
+using (
+  created_by_vendor_id = (
+    select v.id
+    from public.vendors v
+    where v.auth_user_id = auth.uid()
+    limit 1
+  )
+)
+with check (
+  created_by_vendor_id = (
+    select v.id
+    from public.vendors v
+    where v.auth_user_id = auth.uid()
+    limit 1
+  )
+);
+
+-- Vendor can create the worker record after approving its Picker.
+drop policy if exists "Vendors can create their picker workers" on public.vendor_workers;
+
+create policy "Vendors can create their picker workers"
+on public.vendor_workers
+for insert
+to authenticated
+with check (
+  vendor_id = (
     select v.id
     from public.vendors v
     where v.auth_user_id = auth.uid()
