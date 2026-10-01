@@ -22,9 +22,16 @@ export default function App(){
   let{data:p,error:pe}=await supabase.from("picker_profiles").select("id,auth_user_id,picker_login_id,email,full_name,phone,city,locality,pincode,latitude,longitude,availability_status,application_status").eq("auth_user_id",user.id).maybeSingle();
   if(pe)throw pe;
   if(!p){
-   const m=user.user_metadata||{};
-   const{data:created,error:ce}=await supabase.from("picker_profiles").insert({auth_user_id:user.id,full_name:m.full_name||user.email?.split("@")[0]||"Picker",phone:m.phone||"",city:m.city||"",locality:m.locality||null,pincode:m.pincode||null,latitude:m.latitude??null,longitude:m.longitude??null}).select("id,auth_user_id,picker_login_id,email,full_name,phone,city,locality,pincode,latitude,longitude,availability_status,application_status").single();
-   if(ce)throw ce;p=created;
+   // A missing picker profile means this auth account is no longer registered as a Picker.
+   // Do not recreate it automatically; registration must explicitly create a new profile.
+   await supabase.auth.signOut();
+   setProfile(null);
+   setWorker(null);
+   setTasks([]);
+   setRequests([]);
+   setLaneName(null);
+   setLoading(false);
+   return;
   }
   const currentProfile:PickerProfile={id:p.id,authUserId:p.auth_user_id,pickerLoginId:p.picker_login_id||"",email:p.email||user.email||"",fullName:p.full_name,phone:p.phone,city:p.city,locality:p.locality,pincode:p.pincode,latitude:p.latitude,longitude:p.longitude,availabilityStatus:p.availability_status,applicationStatus:p.application_status};
   setProfile(currentProfile);
