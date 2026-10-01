@@ -565,6 +565,16 @@ BEGIN
     RAISE EXCEPTION 'Vendor not found';
   END IF;
 
+  IF EXISTS (
+    SELECT 1
+    FROM public.vendor_workers vw
+    WHERE vw.auth_user_id = v_picker.auth_user_id
+      AND vw.status = 'active'
+      AND vw.vendor_id <> p_vendor_id
+  ) THEN
+    RAISE EXCEPTION 'Picker is already assigned to another vendor';
+  END IF;
+
   IF p_lane_id IS NOT NULL AND NOT EXISTS (
     SELECT 1
     FROM public.vendor_lanes l
