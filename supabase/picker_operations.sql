@@ -433,16 +433,22 @@ AS $$
 DECLARE
   v_total integer;
   v_picked integer;
+  v_order_id uuid;
 BEGIN
 
   IF NEW.basket_id IS NULL THEN
     RETURN NEW;
   END IF;
 
+  SELECT order_id
+  INTO v_order_id
+  FROM public.picker_baskets
+  WHERE id = NEW.basket_id;
+
   SELECT count(*)
   INTO v_total
-  FROM public.order_item_picking_tasks
-  WHERE basket_id = NEW.basket_id;
+  FROM public.order_items
+  WHERE order_id = v_order_id;
 
   SELECT count(*)
   INTO v_picked
