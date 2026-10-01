@@ -5,7 +5,9 @@ alter table public.picker_profiles
   add column if not exists address text,
   add column if not exists documents_submitted jsonb not null default '[]'::jsonb;
 
-create or replace function public.handle_picker_auth_user()
+-- Generate the public Picker ID before the Auth user is committed.
+-- This lets the normal Supabase signUp() response include the Picker ID.
+create or replace function public.assign_picker_login_id()
 returns trigger
 language plpgsql
 security definer
@@ -13,8 +15,6 @@ set search_path = ''
 as $$
 declare
   v_role text;
-  v_source text;
-  v_vendor_id uuid;
   v_picker_id text;
   v_exists boolean;
 begin
@@ -24,15 +24,9 @@ begin
     return new;
   end if;
 
-  v_source := coalesce(new.raw_user_meta_data ->> 'registration_source', 'pwa');
-
-  if v_source = 'vendor' then
-    v_vendor_id := nullif(new.raw_user_meta_data ->> 'created_by_vendor_id', '')::uuid;
-  end if;
-
-  -- Generate the public Picker ID.
   for i in 1..50 loop
     v_picker_id := 'Rpicker-' || lpad((floor(random() * 10000))::int::text, 4, '0');
+
     select exists(
       select 1
       from public.picker_profiles
@@ -48,6 +42,45 @@ begin
 
   if v_picker_id is null then
     raise exception 'Could not generate a unique Picker ID';
+  end if;
+
+  new.raw_user_meta_data :=
+    coalesce(new.raw_user_meta_data, '{}'::jsonb)
+    || jsonb_build_object('picker_login_id', v_picker_id);
+
+  return new;
+end;
+$$;
+
+drop trigger if exists before_picker_auth_user_created on auth.users;
+
+create trigger before_picker_auth_user_created
+  before insert on auth.users
+  for each row
+  execute function public.assign_picker_login_id();
+
+-- Create the normal public Picker record after Supabase Auth creates the user.
+create or replace function public.create_picker_profile_from_auth()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_role text;
+  v_source text;
+  v_vendor_id uuid;
+begin
+  v_role := new.raw_user_meta_data ->> 'picker_role';
+
+  if v_role is distinct from 'picker' then
+    return new;
+  end if;
+
+  v_source := coalesce(new.raw_user_meta_data ->> 'registration_source', 'pwa');
+
+  if v_source = 'vendor' then
+    v_vendor_id := nullif(new.raw_user_meta_data ->> 'created_by_vendor_id', '')::uuid;
   end if;
 
   insert into public.picker_profiles (
@@ -69,7 +102,7 @@ begin
   )
   values (
     new.id,
-    v_picker_id,
+    new.raw_user_meta_data ->> 'picker_login_id',
     new.email,
     coalesce(new.raw_user_meta_data ->> 'full_name', 'Picker'),
     coalesce(new.raw_user_meta_data ->> 'phone', ''),
@@ -94,7 +127,7 @@ drop trigger if exists on_picker_auth_user_created on auth.users;
 create trigger on_picker_auth_user_created
   after insert on auth.users
   for each row
-  execute function public.handle_picker_auth_user();
+  execute function public.create_picker_profile_from_auth();
 
 -- Vendor Portal can see Pickers created by that vendor.
 drop policy if exists "Vendors can view their created pickers" on public.picker_profiles;
@@ -111,7 +144,6 @@ using (
     limit 1
   )
 );
-
 
 -- Vendor can approve only Pickers it created.
 drop policy if exists "Vendors can approve their created pickers" on public.picker_profiles;
