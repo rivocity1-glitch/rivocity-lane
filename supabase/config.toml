@@ -1,0 +1,5 @@
+[functions.picker-login]
+verify_jwt = false
+
+[functions.create-vendor-picker]
+verify_jwt = true
