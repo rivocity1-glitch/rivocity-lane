@@ -11,6 +11,9 @@ export type Task={
   orderItemId:string;
   orderNumber:string;
   productName:string;
+  productId:string;
+  laneName:string|null;
+  rackName:string|null;
   quantity:number;
   status:TaskStatus;
   assignedAt:string;
