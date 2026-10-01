@@ -321,7 +321,34 @@ EXECUTE FUNCTION public.trigger_auto_assign_picker_order();
 
 
 -- ------------------------------------------------------------
--- 5. If a lane is assigned after the order is already packing,
+-- 5. If an order item is added/changed while the order is already
+--    in packing, route it automatically as well.
+-- ------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION public.trigger_auto_assign_picker_order_item()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $
+BEGIN
+  PERFORM public.auto_assign_picker_tasks_for_order(NEW.order_id);
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS
+  trg_auto_assign_picker_order_item
+ON public.order_items;
+
+CREATE TRIGGER trg_auto_assign_picker_order_item
+AFTER INSERT OR UPDATE OF product_id, quantity ON public.order_items
+FOR EACH ROW
+EXECUTE FUNCTION public.trigger_auto_assign_picker_order_item();
+
+
+-- ------------------------------------------------------------
+-- 6. If a lane is assigned after the order is already packing,
 --    automatically assign matching pending items.
 -- ------------------------------------------------------------
 
@@ -373,7 +400,7 @@ EXECUTE FUNCTION public.trigger_auto_assign_picker_lane();
 
 
 -- ------------------------------------------------------------
--- 6. If a product is given a physical lane after the order
+-- 7. If a product is given a physical lane after the order
 --    already exists, automatically assign its task.
 -- ------------------------------------------------------------
 
@@ -421,7 +448,7 @@ EXECUTE FUNCTION public.trigger_auto_assign_picker_location();
 
 
 -- ------------------------------------------------------------
--- 7. Basket status follows picking progress
+-- 8. Basket status follows picking progress
 -- ------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION public.update_picker_basket_status()
@@ -484,7 +511,7 @@ EXECUTE FUNCTION public.update_picker_basket_status();
 
 
 -- ============================================================
--- 8. Admin helper assignment
+-- 9. Admin helper assignment
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.admin_assign_picker_helper(
@@ -689,7 +716,7 @@ TO authenticated;
 
 
 -- ============================================================
--- 9. RLS for automatic baskets
+-- 10. RLS for automatic baskets
 -- ============================================================
 
 ALTER TABLE public.picker_baskets ENABLE ROW LEVEL SECURITY;
@@ -750,7 +777,7 @@ USING (
 
 
 -- ============================================================
--- 10. Verification
+-- 11. Verification
 -- ============================================================
 
 SELECT
