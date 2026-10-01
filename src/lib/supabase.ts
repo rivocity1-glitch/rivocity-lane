@@ -1,12 +1,16 @@
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+console.log("SUPABASE URL:", supabaseUrl);
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(
-    "RivoCity Lane requires VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
+    "Missing Supabase environment variables. Check your .env file."
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(
+  supabaseUrl,
+  supabaseAnonKey
+);
