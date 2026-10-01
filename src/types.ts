@@ -25,6 +25,8 @@ export type SessionWorker={
 export type PickerProfile={
   id:string;
   authUserId:string;
+  pickerLoginId:string;
+  email:string;
   fullName:string;
   phone:string;
   city:string;
