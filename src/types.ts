@@ -14,6 +14,8 @@ export type Task={
   productId:string;
   laneName:string|null;
   rackName:string|null;
+  basketId:string|null;
+  basketCode:string|null;
   quantity:number;
   status:TaskStatus;
   assignedAt:string;
