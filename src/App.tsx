@@ -28,7 +28,6 @@ const[laneName,setLaneName]=useState<string|null>(null);
    setProfile(null);
    setWorker(null);
    setTasks([]);
-   setRequests([]);
    setLaneName(null);
    setLoading(false);
    return;
@@ -70,7 +69,6 @@ const[laneName,setLaneName]=useState<string|null>(null);
    {error&&<div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
    {applicationPending?<ApplicationState profile={profile} onAvailability={setAvailability}/>:<>
     {tab==="picks"&&<Picks worker={worker} tasks={myTasks} laneName={laneName} onPick={markPicked}/>}
-    {tab==="requests"&&<Requests requests={pendingRequests} onRespond={respondToRequest}/>}
     {tab==="history"&&<HistoryView tasks={history} completedCount={completedCount}/>}
     {tab==="profile"&&<Profile profile={profile} worker={worker} itemsPicked={completedCount} ordersWorked={ordersWorked} onAvailability={setAvailability} onRefresh={()=>load().catch(e=>setError(e.message||"Refresh failed."))} onSignOut={signOut}/>}
    </>}
