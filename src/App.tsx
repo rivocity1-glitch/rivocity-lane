@@ -38,9 +38,20 @@ const[laneName,setLaneName]=useState<string|null>(null);
   if(we)throw we;
   if(w){
    const current:SessionWorker={id:w.id,vendorId:w.vendor_id,authUserId:w.auth_user_id,name:w.worker_name};setWorker(current);
-   const{data:rows,error:te}=await supabase.from("order_item_picking_tasks").select("id,order_item_id,quantity,status,assigned_at,picked_at,order_items!inner(product_id,product_name,orders!inner(order_number))").eq("worker_id",w.id).order("assigned_at",{ascending:false});
+   const{data:rows,error:te}=await supabase.from("order_item_picking_tasks").select("id,order_item_id,quantity,status,assigned_at,picked_at").eq("worker_id",w.id).order("assigned_at",{ascending:false});
    if(te)throw te;
-   const productIds=(rows||[]).map((row:any)=>row.order_items?.product_id).filter(Boolean);const{data:locs}=productIds.length?await supabase.from("product_storage_locations").select("product_id,vendor_lanes(lane_name),vendor_racks(rack_name)").in("product_id",productIds):{data:[]};const locationByProduct=new Map<string,any>();(locs||[]).forEach((x:any)=>locationByProduct.set(x.product_id,x));setTasks((rows||[]).map((row:any)=>{const loc=locationByProduct.get(row.order_items?.product_id);return{id:row.id,orderItemId:row.order_item_id,workerId:w.id,orderNumber:row.order_items?.orders?.order_number||"—",productName:row.order_items?.product_name||"Product Item",productId:row.order_items?.product_id||"",laneName:loc?.vendor_lanes?.lane_name||null,rackName:loc?.vendor_racks?.rack_name||null,basketId:null,basketCode:null,quantity:Number(row.quantity||0),status:row.status==="picked"?"picked":"assigned",assignedAt:row.assigned_at||"",completedAt:row.picked_at||""}}));const{data:laneAssignment}=await supabase.from("vendor_lane_picker_assignments").select("vendor_lanes(lane_name)").eq("worker_id",w.id).eq("status","active").maybeSingle();setLaneName((laneAssignment as any)?.vendor_lanes?.lane_name||null);
+   const itemIds=(rows||[]).map((row:any)=>row.order_item_id).filter(Boolean);
+   const{data:itemRows,error:itemError}=itemIds.length?await supabase.from("order_items").select("id,product_id,product_name,order_id").in("id",itemIds):{data:[],error:null};
+   if(itemError)throw itemError;
+   const orderIds=(itemRows||[]).map((row:any)=>row.order_id).filter(Boolean);
+   const{data:orderRows,error:orderError}=orderIds.length?await supabase.from("orders").select("id,order_number").in("id",orderIds):{data:[],error:null};
+   if(orderError)throw orderError;
+   const itemById=new Map<string,any>();(itemRows||[]).forEach((row:any)=>itemById.set(row.id,row));
+   const orderById=new Map<string,any>();(orderRows||[]).forEach((row:any)=>orderById.set(row.id,row));
+   const productIds=(itemRows||[]).map((row:any)=>row.product_id).filter(Boolean);
+   const{data:locs}=productIds.length?await supabase.from("product_storage_locations").select("product_id,vendor_lanes(lane_name),vendor_racks(rack_name)").in("product_id",productIds):{data:[]};
+   const locationByProduct=new Map<string,any>();(locs||[]).forEach((x:any)=>locationByProduct.set(x.product_id,x));
+   setTasks((rows||[]).map((row:any)=>{const item=itemById.get(row.order_item_id);const order=item?orderById.get(item.order_id):null;const loc=locationByProduct.get(item?.product_id);return{id:row.id,orderItemId:row.order_item_id,workerId:w.id,orderNumber:order?.order_number||"—",productName:item?.product_name||"Product Item",productId:item?.product_id||"",laneName:loc?.vendor_lanes?.lane_name||null,rackName:loc?.vendor_racks?.rack_name||null,basketId:null,basketCode:null,quantity:Number(row.quantity||0),status:row.status==="picked"?"picked":"assigned",assignedAt:row.assigned_at||"",completedAt:row.picked_at||""}}));const{data:laneAssignment}=await supabase.from("vendor_lane_picker_assignments").select("vendor_lanes(lane_name)").eq("worker_id",w.id).eq("status","active").maybeSingle();setLaneName((laneAssignment as any)?.vendor_lanes?.lane_name||null);
   }else{setWorker(null);setTasks([]);setLaneName(null);}
 
   setLoading(false);
@@ -57,7 +68,7 @@ const[laneName,setLaneName]=useState<string|null>(null);
  async function markPicked(id:string){setError(null);const now=new Date().toISOString();const{data,error}=await supabase.from("order_item_picking_tasks").update({status:"picked",picked_at:now,updated_at:now}).eq("id",id).eq("worker_id",worker?.id||"").select("id,status,picked_at,updated_at").maybeSingle();if(error){setError(error.message);return}if(!data||data.status!=="picked"){setError("Picker task was not updated. Please refresh and try again.");return}setTasks(v=>v.map(t=>t.id===id?{...t,status:"picked",completedAt:data.picked_at||now}:t))}
  async function setAvailability(next:"available"|"offline"){if(!profile)return;const{error}=await supabase.from("picker_profiles").update({availability_status:next,updated_at:new Date().toISOString()}).eq("id",profile.id).eq("auth_user_id",profile.authUserId);if(error){setError(error.message);return}setProfile({...profile,availabilityStatus:next})}
  async function signIn(e:React.FormEvent){e.preventDefault();setSigningIn(true);setError(null);if(!/^Rpicker-[0-9]{4}$/.test(loginId.trim())||password.length<1||password.length>4){setError("Enter a valid Picker ID and a password of maximum 4 characters.");setSigningIn(false);return}const{data:picker,error:pickerError}=await supabase.from("picker_profiles").select("email,application_status").eq("picker_login_id",loginId.trim()).maybeSingle();if(pickerError||!picker?.email){setError("Picker ID not found.");setSigningIn(false);return}const{error}=await supabase.auth.signInWithPassword({email:picker.email,password:"Rivo@"+password});if(error){setError(error.message||"Unable to sign in.");setSigningIn(false);return}setSigningIn(false)}
- async function signOut(){await supabase.auth.signOut();setProfile(null);setWorker(null);setTasks([]);setRequests([])}
+ async function signOut(){await supabase.auth.signOut();setProfile(null);setWorker(null);setTasks([])}
 
  if(loading)return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm font-bold text-slate-500">Loading RivoCity Picker…</div>;
  if(!profile)return <RegisterOrLogin loginId={loginId} email={email} password={password} setLoginId={setLoginId} setEmail={setEmail} setPassword={setPassword} onSignIn={signIn} signingIn={signingIn} error={error}/>;
