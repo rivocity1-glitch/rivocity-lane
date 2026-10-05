@@ -1,15 +1,15 @@
 import{useEffect,useMemo,useState}from"react";
-import{Check,ChevronRight,Clock,Package,UserRound,History,LogIn,RefreshCw,MapPin,UserPlus,LogOut}from"lucide-react";
+import{Check,ChevronRight,Clock,Package,UserRound,History,LogIn,RefreshCw,MapPin,LogOut}from"lucide-react";
 import{supabase}from"./lib/supabase";
-import{SessionWorker,Task,PickerProfile,PickerRequest}from"./types";
+import{SessionWorker,Task,PickerProfile}from"./types";
 
-type Tab="picks"|"history"|"profile"|"requests";
+type Tab="picks"|"history"|"profile";
 
 export default function App(){
  const[profile,setProfile]=useState<PickerProfile|null>(null);
  const[worker,setWorker]=useState<SessionWorker|null>(null);
  const[tasks,setTasks]=useState<Task[]>([]);
- const[requests,setRequests]=useState<PickerRequest[]>([]);const[laneName,setLaneName]=useState<string|null>(null);
+const[laneName,setLaneName]=useState<string|null>(null);
  const[tab,setTab]=useState<Tab>("picks");
  const[loading,setLoading]=useState(true);
  const[error,setError]=useState<string|null>(null);
@@ -18,7 +18,7 @@ export default function App(){
  const load=async()=>{
   setError(null);
   const{data:{user}}=await supabase.auth.getUser();
-  if(!user){setProfile(null);setWorker(null);setTasks([]);setRequests([]);setLaneName(null);setLoading(false);return;}
+  if(!user){setProfile(null);setWorker(null);setTasks([]);setLaneName(null);setLoading(false);return;}
   let{data:p,error:pe}=await supabase.from("picker_profiles").select("id,auth_user_id,picker_login_id,email,full_name,phone,city,locality,pincode,latitude,longitude,availability_status,application_status").eq("auth_user_id",user.id).maybeSingle();
   if(pe)throw pe;
   if(!p){
@@ -43,9 +43,7 @@ export default function App(){
    if(te)throw te;
    const productIds=(rows||[]).map((row:any)=>row.order_items?.product_id).filter(Boolean);const{data:locs}=productIds.length?await supabase.from("product_storage_locations").select("product_id,vendor_lanes(lane_name),vendor_racks(rack_name)").in("product_id",productIds):{data:[]};const locationByProduct=new Map<string,any>();(locs||[]).forEach((x:any)=>locationByProduct.set(x.product_id,x));setTasks((rows||[]).map((row:any)=>{const loc=locationByProduct.get(row.order_items?.product_id);return{id:row.id,orderItemId:row.order_item_id,workerId:w.id,orderNumber:row.order_items?.orders?.order_number||"—",productName:row.order_items?.product_name||"Product Item",productId:row.order_items?.product_id||"",laneName:loc?.vendor_lanes?.lane_name||null,rackName:loc?.vendor_racks?.rack_name||null,basketId:null,basketCode:null,quantity:Number(row.quantity||0),status:row.status==="picked"?"picked":"assigned",assignedAt:row.assigned_at||"",completedAt:row.picked_at||""}}));const{data:laneAssignment}=await supabase.from("vendor_lane_picker_assignments").select("vendor_lanes(lane_name)").eq("worker_id",w.id).eq("status","active").maybeSingle();setLaneName((laneAssignment as any)?.vendor_lanes?.lane_name||null);
   }else{setWorker(null);setTasks([]);setLaneName(null);}
-  const{data:reqs,error:re}=await supabase.from("picker_vendor_requests").select("id,vendor_id,status,requested_at,vendors!inner(shop_name)").eq("picker_id",p.id).order("requested_at",{ascending:false});
-  if(re)throw re;
-  setRequests((reqs||[]).map((r:any)=>({id:r.id,vendorId:r.vendor_id,vendorName:r.vendors?.shop_name||"RivoCity Vendor",status:r.status,requestedAt:r.requested_at})));
+
   setLoading(false);
  };
 
@@ -56,15 +54,8 @@ export default function App(){
  const history=useMemo(()=>tasks.filter(t=>t.status==="picked").sort((a,b)=>b.completedAt.localeCompare(a.completedAt)),[tasks]);
  const completedCount=history.reduce((n,t)=>n+t.quantity,0);
  const ordersWorked=new Set(tasks.map(t=>t.orderNumber)).size;
- const pendingRequests=requests.filter(r=>r.status==="pending");
 
  async function markPicked(id:string){setError(null);const now=new Date().toISOString();const{data,error}=await supabase.from("order_item_picking_tasks").update({status:"picked",picked_at:now,updated_at:now}).eq("id",id).eq("worker_id",worker?.id||"").select("id,status,picked_at,updated_at").maybeSingle();if(error){setError(error.message);return}if(!data||data.status!=="picked"){setError("Picker task was not updated. Please refresh and try again.");return}setTasks(v=>v.map(t=>t.id===id?{...t,status:"picked",completedAt:data.picked_at||now}:t))}
- async function respondToRequest(id:string,accept:boolean){
-  setError(null);
-  if(accept){const{error}=await supabase.rpc("accept_picker_vendor_request",{p_request_id:id});if(error){setError(error.message);return}}
-  else{const{error}=await supabase.from("picker_vendor_requests").update({status:"declined",responded_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq("id",id);if(error){setError(error.message);return}}
-  await load();
- }
  async function setAvailability(next:"available"|"offline"){if(!profile)return;const{error}=await supabase.from("picker_profiles").update({availability_status:next,updated_at:new Date().toISOString()}).eq("id",profile.id).eq("auth_user_id",profile.authUserId);if(error){setError(error.message);return}setProfile({...profile,availabilityStatus:next})}
  async function signIn(e:React.FormEvent){e.preventDefault();setSigningIn(true);setError(null);if(!/^Rpicker-[0-9]{4}$/.test(loginId.trim())||password.length<1||password.length>4){setError("Enter a valid Picker ID and a password of maximum 4 characters.");setSigningIn(false);return}const{data:picker,error:pickerError}=await supabase.from("picker_profiles").select("email,application_status").eq("picker_login_id",loginId.trim()).maybeSingle();if(pickerError||!picker?.email){setError("Picker ID not found.");setSigningIn(false);return}const{error}=await supabase.auth.signInWithPassword({email:picker.email,password:"Rivo@"+password});if(error){setError(error.message||"Unable to sign in.");setSigningIn(false);return}setSigningIn(false)}
  async function signOut(){await supabase.auth.signOut();setProfile(null);setWorker(null);setTasks([]);setRequests([])}
@@ -86,7 +77,6 @@ export default function App(){
   </main>
   {!applicationPending&&<nav className="fixed bottom-0 inset-x-0 bg-white border-t"><div className="max-w-xl mx-auto grid grid-cols-4 h-16">
    <NavButton active={tab==="picks"} icon={<Package size={18}/>} label="My Picks" onClick={()=>setTab("picks")}/>
-   <NavButton active={tab==="requests"} icon={<UserPlus size={18}/>} label="Requests" badge={pendingRequests.length} onClick={()=>setTab("requests")}/>
    <NavButton active={tab==="history"} icon={<History size={18}/>} label="History" onClick={()=>setTab("history")}/>
    <NavButton active={tab==="profile"} icon={<UserRound size={18}/>} label="Profile" onClick={()=>setTab("profile")}/>
   </div></nav>}
@@ -106,8 +96,6 @@ function RegisterOrLogin({loginId,email,password,setLoginId,setEmail,setPassword
 function ApplicationState({profile,onAvailability}:{profile:PickerProfile;onAvailability:(v:"available"|"offline")=>void}){return <section className="space-y-4"><div><p className="text-sm text-slate-500">Application status</p><h1 className="text-2xl font-black">{profile.applicationStatus==="pending"?"Waiting for approval":profile.applicationStatus==="rejected"?"Application not approved":"Picker access paused"}</h1></div><div className="bg-white border rounded-2xl p-5"><p className="text-sm text-slate-600">Your Picker profile is registered with RivoCity. An admin must approve it before vendors can request you.</p><div className="mt-4 text-sm font-bold text-slate-500">Location: {profile.city}{profile.locality?" · "+profile.locality:""}</div></div></section>}
 
 function Picks({worker,tasks,laneName,onPick}:{worker:SessionWorker|null;tasks:Task[];laneName:string|null;onPick:(id:string)=>void}){return <section className="space-y-4"><div><p className="text-sm text-slate-500">Assigned to</p><h1 className="text-2xl font-black">{worker?.name||"RivoCity Picker"}</h1><p className="text-sm text-slate-500 mt-1">{tasks.length?tasks.length+" items to pick":"You're all caught up."}</p>{laneName&&<p className="text-xs font-bold text-emerald-700 mt-1">Assigned Lane: {laneName}</p>}</div>{!worker&&<div className="bg-white border rounded-2xl p-8 text-center"><Check className="mx-auto text-emerald-600"/><h2 className="font-black mt-3">No vendor assigned</h2><p className="text-sm text-slate-500 mt-1">Stay available and vendors can request you.</p></div>}{tasks.map(task=><article key={task.id} className="bg-white border rounded-2xl p-4 shadow-sm"><div className="flex items-start justify-between"><div><div className="text-xs font-bold text-emerald-700 uppercase">Order {task.orderNumber}</div><h2 className="font-black text-lg mt-1">{task.productName}</h2><p className="text-sm text-slate-500 mt-1">Quantity: <b className="text-slate-900">{task.quantity}</b></p>{task.laneName||task.rackName?<p className="text-xs font-bold text-emerald-700 mt-1">Location: {task.laneName||"Store"}{task.rackName?" → "+task.rackName:""}</p>:<p className="text-xs font-semibold text-slate-500 mt-1">No shelf location configured — pick directly from the store.</p>}<p className="text-xs text-slate-500 mt-1">Pick the item from the store and mark it as picked when ready.</p></div><Clock size={18} className="text-slate-300"/></div><button onClick={()=>onPick(task.id)} className="mt-4 w-full bg-emerald-600 text-white rounded-xl py-3.5 font-black flex items-center justify-center gap-2">Mark Picked <ChevronRight size={18}/></button></article>)}</section>}
-
-function Requests({requests,onRespond}:{requests:PickerRequest[];onRespond:(id:string,a:boolean)=>void}){return <section className="space-y-4"><div><p className="text-sm text-slate-500">Vendor opportunities</p><h1 className="text-2xl font-black">Requests</h1></div>{requests.length===0?<div className="bg-white border rounded-2xl p-8 text-center text-sm text-slate-500">No new vendor requests.</div>:requests.map(r=><div key={r.id} className="bg-white border rounded-2xl p-4"><div className="font-black">{r.vendorName}</div><p className="text-sm text-slate-500 mt-1">A nearby vendor wants you as a Picker.</p><div className="grid grid-cols-2 gap-2 mt-4"><button onClick={()=>onRespond(r.id,true)} className="rounded-xl bg-emerald-600 text-white py-3 font-black">Accept</button><button onClick={()=>onRespond(r.id,false)} className="rounded-xl border py-3 font-bold text-slate-600">Decline</button></div></div>)}</section>}
 
 function HistoryView({tasks,completedCount}:{tasks:Task[];completedCount:number}){return <section className="space-y-4"><div><p className="text-sm text-slate-500">Your completed picks</p><h1 className="text-2xl font-black">History</h1></div><div className="bg-white border rounded-2xl p-4"><p className="text-xs text-slate-500">TOTAL ITEMS PICKED</p><p className="text-3xl font-black mt-1">{completedCount}</p></div>{tasks.length===0&&<div className="bg-white border rounded-xl p-6 text-center text-sm text-slate-500">No completed picks yet.</div>}{tasks.map(t=><div key={t.id} className="bg-white border rounded-xl p-4 flex justify-between"><div><div className="font-bold">{t.productName}</div><div className="text-xs text-slate-500">Order {t.orderNumber} · Qty {t.quantity}</div></div><Check size={19} className="text-emerald-600"/></div>)}</section>}
 
