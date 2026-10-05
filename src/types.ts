@@ -1,4 +1,4 @@
-export type TaskStatus="assigned"|"completed";
+export type TaskStatus="assigned"|"picked";
 export type Worker={
   id:string;
   name:string;
