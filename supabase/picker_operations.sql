@@ -142,15 +142,9 @@ AS $$
 DECLARE
   v_order record;
   v_item record;
-  v_location record;
-  v_worker_id uuid;
   v_basket_id uuid;
 BEGIN
-
-  SELECT
-    o.id,
-    o.vendor_id,
-    o.order_status
+  SELECT o.id, o.vendor_id, o.order_status
   INTO v_order
   FROM public.orders o
   WHERE o.id = p_order_id;
@@ -159,125 +153,50 @@ BEGIN
     RETURN;
   END IF;
 
-  IF v_order.order_status NOT IN (
-    'accepted',
-    'preparing',
-    'packed',
-    'ready_for_pickup',
-    'waiting_rider'
-  ) THEN
+  IF v_order.order_status NOT IN ('accepted','preparing') THEN
     RETURN;
   END IF;
 
-  v_basket_id :=
-    public.ensure_picker_basket(p_order_id);
+  v_basket_id := public.ensure_picker_basket(p_order_id);
 
   FOR v_item IN
-    SELECT
-      oi.id,
-      oi.product_id,
-      oi.quantity
+    SELECT oi.id, oi.quantity
     FROM public.order_items oi
     WHERE oi.order_id = p_order_id
   LOOP
-
-    v_worker_id := NULL;
-
-    -- --------------------------------------------------------
-    -- First choice:
-    -- Product location -> Lane -> Picker assigned to that lane
-    -- --------------------------------------------------------
-
-    SELECT
-      v.id
-    INTO v_worker_id
-    FROM public.product_storage_locations psl
-    INNER JOIN public.vendor_lane_picker_assignments a
-      ON a.lane_id = psl.lane_id
-     AND a.vendor_id = v_order.vendor_id
-     AND a.status = 'active'
-    INNER JOIN public.vendor_workers v
-      ON v.id = a.worker_id
-     AND v.vendor_id = v_order.vendor_id
-     AND v.status = 'active'
-    WHERE psl.vendor_id = v_order.vendor_id
-      AND psl.product_id = v_item.product_id
-    ORDER BY psl.created_at ASC
-    LIMIT 1;
-
-    -- --------------------------------------------------------
-    -- Fallback:
-    -- If this product has no physical location and the vendor
-    -- has exactly one active Picker, give it to that Picker.
-    -- This keeps locations optional.
-    -- --------------------------------------------------------
-
-    IF v_worker_id IS NULL THEN
-
-      SELECT min(x.id)
-      INTO v_worker_id
-      FROM (
-        SELECT v.id
-        FROM public.vendor_workers v
-        WHERE v.vendor_id = v_order.vendor_id
-          AND v.status = 'active'
-      ) x
-      WHERE (
-        SELECT count(*)
-        FROM public.vendor_workers vx
-        WHERE vx.vendor_id = v_order.vendor_id
-          AND vx.status = 'active'
-      ) = 1;
-
-    END IF;
-
-    -- --------------------------------------------------------
-    -- Create/update the task only when a Picker can actually
-    -- receive it.
-    -- --------------------------------------------------------
-
-    IF v_worker_id IS NOT NULL THEN
-
-      INSERT INTO public.order_item_picking_tasks (
-        order_item_id,
-        vendor_id,
-        worker_id,
-        quantity,
-        status,
-        basket_id,
-        assigned_at,
-        updated_at
-      )
-      VALUES (
-        v_item.id,
-        v_order.vendor_id,
-        v_worker_id,
-        v_item.quantity,
-        'assigned',
-        v_basket_id,
-        now(),
-        now()
-      )
-      ON CONFLICT (order_item_id)
-      DO UPDATE SET
-        worker_id = CASE
-          WHEN public.order_item_picking_tasks.status = 'picked'
-            THEN public.order_item_picking_tasks.worker_id
-          ELSE EXCLUDED.worker_id
-        END,
-        quantity = EXCLUDED.quantity,
-        basket_id = EXCLUDED.basket_id,
-        assigned_at = CASE
-          WHEN public.order_item_picking_tasks.status = 'picked'
-            THEN public.order_item_picking_tasks.assigned_at
-          ELSE now()
-        END,
-        updated_at = now();
-
-    END IF;
-
+    INSERT INTO public.order_item_picking_tasks (
+      order_item_id,
+      vendor_id,
+      worker_id,
+      quantity,
+      status,
+      basket_id,
+      assigned_at,
+      updated_at
+    )
+    VALUES (
+      v_item.id,
+      v_order.vendor_id,
+      (
+        SELECT vw.id
+        FROM public.vendor_workers vw
+        WHERE vw.vendor_id = v_order.vendor_id
+          AND vw.status = 'active'
+        ORDER BY vw.created_at ASC
+        LIMIT 1
+      ),
+      v_item.quantity,
+      'assigned',
+      v_basket_id,
+      now(),
+      now()
+    )
+    ON CONFLICT (order_item_id)
+    DO UPDATE SET
+      quantity = EXCLUDED.quantity,
+      basket_id = EXCLUDED.basket_id,
+      updated_at = now();
   END LOOP;
-
 END;
 $$;
 
