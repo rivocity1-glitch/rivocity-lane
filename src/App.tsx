@@ -36,11 +36,11 @@ export default function App(){
   if(we)throw we;
   if(w){
    const current:SessionWorker={id:w.id,vendorId:w.vendor_id,authUserId:w.auth_user_id,name:w.worker_name};setWorker(current);
-   const{data:rows,error:te}=await supabase.from("order_item_picking_tasks").select("id,order_item_id,worker_id,quantity,status,assigned_at,picked_at,vendor_id,basket_id").eq("vendor_id",w.vendor_id).neq("status","picked").order("assigned_at",{ascending:false});
+   const{data:rows,error:te}=await supabase.from("order_item_picking_tasks").select("id,order_item_id,worker_id,quantity,status,assigned_at,picked_at,vendor_id,basket_id").eq("vendor_id",w.vendor_id).eq("status","assigned").order("assigned_at",{ascending:false});
    if(te)throw te;
-   const myPickedRows = await supabase.from("order_item_picking_tasks").select("id,order_item_id,worker_id,quantity,status,assigned_at,picked_at,vendor_id,basket_id").eq("vendor_id",w.vendor_id).eq("status","picked").eq("worker_id",w.id).order("picked_at",{ascending:false});
-   if(myPickedRows.error)throw myPickedRows.error;
-   const allRows=[...(rows||[]),...(myPickedRows.data||[])];
+   const{data:myPickedRows,error:myPickedError}=await supabase.from("order_item_picking_tasks").select("id,order_item_id,worker_id,quantity,status,assigned_at,picked_at,vendor_id,basket_id").eq("vendor_id",w.vendor_id).eq("status","picked").eq("worker_id",w.id).order("picked_at",{ascending:false});
+   if(myPickedError)throw myPickedError;
+   const allRows=[...(rows||[]),...(myPickedRows||[])];
    const itemIds=allRows.map((row:any)=>row.order_item_id).filter(Boolean);
    const{data:itemRows,error:itemError}=itemIds.length?await supabase.from("order_items").select("id,product_id,product_name,order_id").in("id",itemIds):{data:[],error:null};
    if(itemError)throw itemError;
@@ -52,7 +52,10 @@ export default function App(){
    const productIds=(itemRows||[]).map((row:any)=>row.product_id).filter(Boolean);
    const{data:locs}=productIds.length?await supabase.from("product_storage_locations").select("product_id,vendor_lanes(lane_name),vendor_racks(rack_name)").in("product_id",productIds):{data:[]};
    const locationByProduct=new Map<string,any>();(locs||[]).forEach((x:any)=>locationByProduct.set(x.product_id,x));
-   setTasks(allRows.map((row:any)=>{const item=itemById.get(row.order_item_id);const order=item?orderById.get(item.order_id):null;const loc=locationByProduct.get(item?.product_id);return{id:row.id,orderItemId:row.order_item_id,workerId:row.worker_id||w.id,orderNumber:order?.order_number||"—",productName:item?.product_name||"Product Item",productId:item?.product_id||"",laneName:loc?.vendor_lanes?.lane_name||null,rackName:loc?.vendor_racks?.rack_name||null,basketId:row.basket_id||null,basketCode:null,quantity:Number(row.quantity||0),status:row.status==="picked"?"picked":"assigned",assignedAt:row.assigned_at||"",completedAt:row.picked_at||""}}));const{data:laneAssignment}=await supabase.from("vendor_lane_picker_assignments").select("vendor_lanes(lane_name)").eq("worker_id",w.id).eq("status","active").maybeSingle();setLaneName((laneAssignment as any)?.vendor_lanes?.lane_name||null);
+   const basketIds=allRows.map((row:any)=>row.basket_id).filter(Boolean);
+   const{data:baskets}=basketIds.length?await supabase.from("picker_baskets").select("id,basket_code,status").in("id",basketIds):{data:[]};
+   const basketById=new Map<string,any>();(baskets||[]).forEach((x:any)=>basketById.set(x.id,x));
+   setTasks(allRows.map((row:any)=>{const item=itemById.get(row.order_item_id);const order=item?orderById.get(item.order_id):null;const loc=locationByProduct.get(item?.product_id);const basket=row.basket_id?basketById.get(row.basket_id):null;return{id:row.id,orderItemId:row.order_item_id,workerId:row.worker_id||w.id,orderNumber:order?.order_number||"—",productName:item?.product_name||"Product Item",productId:item?.product_id||"",laneName:loc?.vendor_lanes?.lane_name||null,rackName:loc?.vendor_racks?.rack_name||null,basketId:row.basket_id||null,basketCode:basket?.basket_code||null,quantity:Number(row.quantity||0),status:row.status==="picked"?"picked":"assigned",assignedAt:row.assigned_at||"",completedAt:row.picked_at||""}}));const{data:laneAssignment}=await supabase.from("vendor_lane_picker_assignments").select("vendor_lanes(lane_name)").eq("worker_id",w.id).eq("status","active").maybeSingle();setLaneName((laneAssignment as any)?.vendor_lanes?.lane_name||null);
   }else{setWorker(null);setTasks([]);setLaneName(null);}
 
   setLoading(false);
