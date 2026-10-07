@@ -2,6 +2,12 @@
 -- Vendor accepts an order -> every order item gets one shared picking task.
 -- worker_id stays NULL until the Picker who physically picks the item completes it.
 -- Lane/rack are location hints only; they never assign an item to a Picker.
+--
+-- This migration intentionally uses only the columns that exist on
+-- public.order_item_picking_tasks:
+-- id, order_item_id, vendor_id, worker_id, quantity, status,
+-- assigned_at, picked_at, updated_at.
+-- No basket_id is used.
 
 BEGIN;
 
@@ -22,7 +28,6 @@ AS $$
 DECLARE
   v_order record;
   v_item record;
-  v_basket_id uuid;
 BEGIN
   SELECT o.id, o.vendor_id, o.order_status
   INTO v_order
@@ -37,8 +42,6 @@ BEGIN
     RETURN;
   END IF;
 
-  v_basket_id := public.ensure_picker_basket(p_order_id);
-
   FOR v_item IN
     SELECT oi.id, oi.quantity
     FROM public.order_items oi
@@ -50,7 +53,6 @@ BEGIN
       worker_id,
       quantity,
       status,
-      basket_id,
       assigned_at,
       updated_at
     )
@@ -60,17 +62,12 @@ BEGIN
       NULL,
       v_item.quantity,
       'assigned',
-      v_basket_id,
       now(),
       now()
     )
     ON CONFLICT (order_item_id)
     DO UPDATE SET
       quantity = EXCLUDED.quantity,
-      basket_id = COALESCE(
-        public.order_item_picking_tasks.basket_id,
-        EXCLUDED.basket_id
-      ),
       updated_at = now()
     WHERE public.order_item_picking_tasks.status <> 'picked';
   END LOOP;
@@ -197,8 +194,6 @@ WITH CHECK (
   )
 );
 
--- Backfill only currently accepted/preparing orders that are missing
--- a task or still have an unpicked task. Picked tasks are preserved.
 DO $$
 DECLARE
   v_order_id uuid;
