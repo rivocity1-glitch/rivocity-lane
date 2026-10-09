@@ -175,7 +175,7 @@ export default function App() {
           id: row.id, orderItemId: row.order_item_id, workerId: row.worker_id || "",
           orderNumber: order?.order_number || "—", productName: item?.product_name || "Product Item",
           productId: item?.product_id || "", laneName: null, rackName: null,
-          quantity: Number(row.quantity || 0), status: "picked",
+          quantity: Number(row.quantity || 0), status: "picked" as const,
           assignedAt: row.assigned_at || "", completedAt: row.picked_at || "",
         };
       });
