@@ -168,7 +168,7 @@ export default function App() {
       const historyOrderById = new Map<string, any>();
       (historyOrderRows || []).forEach((order: any) => historyOrderById.set(order.id, order));
 
-      setHistoryTasks(historicTasks.map((row: any) => {
+      const mappedHistoryTasks: Task[] = historicTasks.map((row: any) => {
         const item = historyItemById.get(row.order_item_id);
         const order = item ? historyOrderById.get(item.order_id) : null;
         return {
@@ -178,7 +178,8 @@ export default function App() {
           quantity: Number(row.quantity || 0), status: "picked",
           assignedAt: row.assigned_at || "", completedAt: row.picked_at || "",
         };
-      }));
+      });
+      setHistoryTasks(mappedHistoryTasks);
 
       const { data: laneAssignment, error: laneError } = await supabase
         .from("vendor_lane_picker_assignments").select("vendor_lanes(lane_name)")
