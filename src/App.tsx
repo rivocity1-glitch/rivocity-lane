@@ -19,6 +19,7 @@ export default function App() {
   const [historyTasks, setHistoryTasks] = useState<Task[]>([]);
   const [registrationDetails, setRegistrationDetails] = useState<RegistrationDetails>(emptyRegistrationDetails);
   const [laneName, setLaneName] = useState<string | null>(null);
+  const [assignedVendor, setAssignedVendor] = useState<{ name: string | null; area: string | null }>({ name: null, area: null });
   const [tab, setTab] = useState<Tab>("picks");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -85,6 +86,25 @@ export default function App() {
       }
 
       setWorker({ id: workerRow.id, vendorId: workerRow.vendor_id, authUserId: workerRow.auth_user_id, name: workerRow.worker_name });
+      const { data: vendorRow, error: vendorError } = await supabase
+        .from("vendors")
+        .select("id,shop_name")
+        .eq("id", workerRow.vendor_id)
+        .maybeSingle();
+      if (vendorError) console.warn("Vendor name could not be loaded:", vendorError);
+
+      const { data: vendorProfileRow, error: vendorProfileError } = await supabase
+        .from("vendor_profiles")
+        .select("store_name,city,address_line1,address_line2")
+        .eq("vendor_id", workerRow.vendor_id)
+        .maybeSingle();
+      if (vendorProfileError) console.warn("Vendor area could not be loaded:", vendorProfileError);
+
+      setAssignedVendor({
+        name: vendorProfileRow?.store_name || vendorRow?.shop_name || null,
+        area: [vendorProfileRow?.address_line1, vendorProfileRow?.address_line2, vendorProfileRow?.city]
+          .filter(Boolean).join(", ") || null,
+      });
 
       // Active queue deliberately excludes packed/delivered orders.
       const { data: orderRows, error: ordersError } = await supabase
@@ -300,7 +320,7 @@ export default function App() {
         {applicationPending ? <ApplicationState profile={profile} /> : <>
           {tab === "picks" ? <Picks worker={worker} availableOrders={availableOrders} myOrders={myOrders} laneName={laneName} onClaim={claimOrder} onPick={markPicked} /> : null}
           {tab === "history" ? <HistoryView tasks={historyTasks} completedCount={completedCount} refreshing={refreshing} onRefresh={() => void load(true)} /> : null}
-          {tab === "profile" ? <Profile profile={profile} worker={worker} registrationDetails={registrationDetails} itemsPicked={completedCount} ordersWorked={ordersWorked} onAvailability={setAvailability} onRefresh={() => void load(true)} onSignOut={signOut} refreshing={refreshing} /> : null}
+          {tab === "profile" ? <Profile profile={profile} assignedVendor={assignedVendor} registrationDetails={registrationDetails} itemsPicked={completedCount} ordersWorked={ordersWorked} onAvailability={setAvailability} onRefresh={() => void load(true)} onSignOut={signOut} refreshing={refreshing} /> : null}
         </>}
       </main>
       {!applicationPending ? <nav aria-label="Main navigation" className="bottom-navigation fixed inset-x-0 bottom-0 z-30 border-t bg-white">
@@ -522,8 +542,8 @@ function HistoryView({ tasks, completedCount, refreshing, onRefresh }: { tasks: 
   </section>;
 }
 
-function Profile({ profile, worker, registrationDetails, itemsPicked, ordersWorked, onAvailability, onRefresh, onSignOut, refreshing }: {
-  profile: PickerProfile; worker: SessionWorker | null; registrationDetails: RegistrationDetails; itemsPicked: number; ordersWorked: number;
+function Profile({ profile, assignedVendor, registrationDetails, itemsPicked, ordersWorked, onAvailability, onRefresh, onSignOut, refreshing }: {
+  profile: PickerProfile; assignedVendor: { name: string | null; area: string | null }; registrationDetails: RegistrationDetails; itemsPicked: number; ordersWorked: number;
   onAvailability: (value: "available" | "offline") => void; onRefresh: () => void; onSignOut: () => void; refreshing: boolean;
 }) {
   return <section className="space-y-4">
@@ -538,9 +558,9 @@ function Profile({ profile, worker, registrationDetails, itemsPicked, ordersWork
       <InfoRow label="Coordinates" value={profile.latitude !== null && profile.longitude !== null ? profile.latitude + ", " + profile.longitude : null} />
       {registrationDetails.createdAt ? <InfoRow icon={<CalendarDays size={16} />} label="Registered on" value={formatDate(registrationDetails.createdAt)} /> : null}
     </div></div>
-    <div className="rounded-2xl border bg-white p-4 sm:p-5"><h2 className="font-black">Account identifiers</h2><div className="mt-3 space-y-1">
-      <InfoRow label="Picker profile ID" value={profile.id} /><InfoRow label="Auth user ID" value={profile.authUserId} />
-      <InfoRow label="Assigned vendor" value={worker?.vendorId} />
+    <div className="rounded-2xl border bg-white p-4 sm:p-5"><h2 className="font-black">Assigned vendor</h2><div className="mt-3 space-y-1">
+      <InfoRow label="Vendor name" value={assignedVendor.name} />
+      <InfoRow label="Area" value={assignedVendor.area} />
     </div></div>
     <div className="rounded-2xl border bg-white p-4 sm:p-5"><p className="text-xs font-bold uppercase text-slate-400">Availability</p>
       <div className="mt-3 grid grid-cols-2 gap-2">
