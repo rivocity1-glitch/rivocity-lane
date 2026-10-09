@@ -438,7 +438,7 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
 }
 
 function FormField({ label, value, onChange, type = "text", autoComplete, inputMode, required = false }: {
-  label: string; value: string; onChange: (value: string) => void; type?: string; autoComplete?: string;
+  label: string; value: string; onChange: (value: string) => void; type?: "text" | "email" | "tel"; autoComplete?: string;
   inputMode?: "text" | "numeric" | "tel" | "email"; required?: boolean;
 }) {
   return <label className="mt-3 block text-xs font-bold text-slate-600">{label}
