@@ -457,16 +457,68 @@ function ApplicationState({ profile }: { profile: PickerProfile }) {
 }
 
 function HistoryView({ tasks, completedCount, refreshing, onRefresh }: { tasks: Task[]; completedCount: number; refreshing: boolean; onRefresh: () => void }) {
+  const [selectedOrderNumber, setSelectedOrderNumber] = useState<string | null>(null);
+  const groupedOrders = useMemo(() => {
+    const groups = new Map<string, Task[]>();
+    tasks.forEach((task) => {
+      const key = task.orderNumber || "—";
+      groups.set(key, [...(groups.get(key) || []), task]);
+    });
+    return Array.from(groups.entries()).map(([orderNumber, orderTasks]) => ({
+      orderNumber,
+      tasks: orderTasks,
+      itemCount: orderTasks.reduce((total, task) => total + task.quantity, 0),
+      latestPick: orderTasks.reduce((latest, task) => {
+        const time = task.completedAt ? new Date(task.completedAt).getTime() : 0;
+        return time > latest ? time : latest;
+      }, 0),
+    })).sort((a, b) => b.latestPick - a.latestPick);
+  }, [tasks]);
+  const selectedOrder = groupedOrders.find((order) => order.orderNumber === selectedOrderNumber) || null;
+
   return <section className="space-y-4">
-    <div className="flex items-start justify-between gap-3"><div><p className="text-sm text-slate-500">Your completed picks</p><h1 className="text-2xl font-black">History</h1></div>
-      <button type="button" onClick={onRefresh} aria-label="Refresh history" className="touch-target flex items-center justify-center rounded-xl border bg-white text-slate-700"><RefreshCw size={18} className={refreshing ? "animate-spin" : ""} /></button>
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        {selectedOrder ? <button type="button" onClick={() => setSelectedOrderNumber(null)} className="mb-2 inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm font-bold text-emerald-700"><ArrowLeft size={18} />Back to history</button> : null}
+        <p className="text-sm text-slate-500">Your completed picks</p>
+        <h1 className="break-words text-2xl font-black">{selectedOrder ? "Order " + selectedOrder.orderNumber : "History"}</h1>
+      </div>
+      <button type="button" onClick={onRefresh} aria-label="Refresh history" className="touch-target flex shrink-0 items-center justify-center rounded-xl border bg-white text-slate-700"><RefreshCw size={18} className={refreshing ? "animate-spin" : ""} /></button>
     </div>
-    <div className="rounded-2xl border bg-white p-4"><p className="text-xs font-bold text-slate-500">TOTAL ITEMS PICKED</p><p className="mt-1 text-3xl font-black">{completedCount}</p><p className="mt-1 text-sm text-slate-500">{tasks.length} completed picking tasks</p></div>
-    {!tasks.length ? <div className="rounded-xl border bg-white p-6 text-center text-sm text-slate-500">No completed picks found for this Picker yet.</div> :
-      <div className="space-y-3">{tasks.map(task => <article key={task.id} className="flex min-w-0 items-start justify-between gap-3 rounded-xl border bg-white p-4">
-        <div className="min-w-0"><div className="break-words font-bold">{task.productName}</div><div className="mt-1 break-words text-xs text-slate-500">Order {task.orderNumber} · Qty {task.quantity}</div><div className="mt-1 text-xs text-slate-500">{formatDate(task.completedAt)}</div></div>
-        <Check size={19} className="mt-1 shrink-0 text-emerald-600" />
-      </article>)}</div>}
+    {!selectedOrder ? <>
+      <div className="rounded-2xl border bg-white p-4">
+        <p className="text-xs font-bold text-slate-500">TOTAL ITEMS PICKED</p>
+        <p className="mt-1 text-3xl font-black">{completedCount}</p>
+        <p className="mt-1 text-sm text-slate-500">{groupedOrders.length} completed orders · {tasks.length} completed picking tasks</p>
+      </div>
+      {!groupedOrders.length ? <div className="rounded-xl border bg-white p-6 text-center text-sm text-slate-500">No completed picks found for this Picker yet.</div> :
+        <div className="space-y-3">{groupedOrders.map((order) => (
+          <button key={order.orderNumber} type="button" onClick={() => setSelectedOrderNumber(order.orderNumber)} className="flex min-h-24 w-full min-w-0 items-center justify-between gap-3 rounded-xl border bg-white p-4 text-left shadow-sm hover:border-emerald-300">
+            <div className="min-w-0">
+              <div className="break-words font-bold">Order {order.orderNumber}</div>
+              <div className="mt-1 text-xs text-slate-500">{order.tasks.length} completed picking tasks · {order.itemCount} items</div>
+              <div className="mt-1 text-xs text-slate-500">Last picked: {formatDate(order.latestPick ? new Date(order.latestPick).toISOString() : null)}</div>
+            </div>
+            <ChevronRight size={20} className="shrink-0 text-emerald-600" />
+          </button>
+        ))}</div>}
+    </> : <>
+      <div className="rounded-2xl border bg-white p-4">
+        <p className="text-xs font-bold text-slate-500">ITEMS PICKED IN THIS ORDER</p>
+        <p className="mt-1 text-3xl font-black">{selectedOrder.itemCount}</p>
+        <p className="mt-1 text-sm text-slate-500">{selectedOrder.tasks.length} completed picking tasks</p>
+      </div>
+      <div className="space-y-3">{selectedOrder.tasks.map((task) => (
+        <article key={task.id} className="flex min-w-0 items-start justify-between gap-3 rounded-xl border bg-white p-4">
+          <div className="min-w-0">
+            <div className="break-words font-bold">{task.productName}</div>
+            <div className="mt-1 break-words text-xs text-slate-500">Quantity: {task.quantity}</div>
+            <div className="mt-1 text-xs text-slate-500">Picked: {formatDate(task.completedAt)}</div>
+          </div>
+          <Check size={19} className="mt-1 shrink-0 text-emerald-600" />
+        </article>
+      ))}</div>
+    </>}
   </section>;
 }
 
@@ -488,7 +540,7 @@ function Profile({ profile, worker, registrationDetails, itemsPicked, ordersWork
     </div></div>
     <div className="rounded-2xl border bg-white p-4 sm:p-5"><h2 className="font-black">Account identifiers</h2><div className="mt-3 space-y-1">
       <InfoRow label="Picker profile ID" value={profile.id} /><InfoRow label="Auth user ID" value={profile.authUserId} />
-      <InfoRow label="Vendor worker ID" value={worker?.id} /><InfoRow label="Assigned vendor ID" value={worker?.vendorId} />
+      <InfoRow label="Assigned vendor" value={worker?.vendorId} />
     </div></div>
     <div className="rounded-2xl border bg-white p-4 sm:p-5"><p className="text-xs font-bold uppercase text-slate-400">Availability</p>
       <div className="mt-3 grid grid-cols-2 gap-2">
