@@ -12,7 +12,11 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key.startsWith("rivocity-lane-") && key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(
+        keys
+          .filter((key) => key.startsWith("rivocity-lane-") && key !== CACHE_NAME)
+          .map((key) => caches.delete(key))
+      ))
       .then(() => self.clients.claim())
   );
 });
@@ -25,18 +29,19 @@ self.addEventListener("fetch", (event) => {
   const isManifest = requestUrl.pathname === "/manifest.webmanifest";
   if (!isNavigation && !isManifest) return;
 
+  const cacheKey = isNavigation ? "/" : event.request;
+  const networkResponse = fetch(event.request).then(async (response) => {
+    if (response && response.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      await cache.put(cacheKey, response.clone());
+    }
+    return response;
+  });
+
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response && response.ok) {
-          const responseCopy = response.clone();
-          event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.put(isNavigation ? "/" : event.request, responseCopy)));
-        }
-        return response;
-      })
-      .catch(async () => {
-        const cache = await caches.open(CACHE_NAME);
-        return (await cache.match(isNavigation ? "/" : event.request)) || Response.error();
-      })
+    networkResponse.catch(async () => {
+      const cache = await caches.open(CACHE_NAME);
+      return (await cache.match(cacheKey)) || Response.error();
+    })
   );
 });
