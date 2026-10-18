@@ -11,6 +11,106 @@ type PickerOrder = { id: string; orderNumber: string; status: string; claimedAt:
 type RegistrationDetails = { address: string | null; createdAt: string | null };
 const emptyRegistrationDetails: RegistrationDetails = { address: null, createdAt: null };
 
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
+function isAndroidDevice() {
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  return /android/i.test(nav.userAgentData?.platform || navigator.userAgent);
+}
+
+function isStandaloneDisplay() {
+  return window.matchMedia("(display-mode: standalone)").matches
+    || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+}
+
+function InstallAppCard() {
+  const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installed, setInstalled] = useState(isStandaloneDisplay);
+  const [android, setAndroid] = useState(isAndroidDevice);
+  const [showHelp, setShowHelp] = useState(false);
+
+  useEffect(() => {
+    const refreshPlatform = () => setAndroid(isAndroidDevice());
+    const displayMode = window.matchMedia("(display-mode: standalone)");
+    const refreshInstalled = () => setInstalled(isStandaloneDisplay());
+
+    const onBeforeInstall = (event: Event) => {
+      event.preventDefault();
+      setInstallEvent(event as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => {
+      setInstalled(true);
+      setInstallEvent(null);
+      setShowHelp(false);
+    };
+
+    window.addEventListener("beforeinstallprompt", onBeforeInstall);
+    window.addEventListener("appinstalled", onInstalled);
+    displayMode.addEventListener?.("change", refreshInstalled);
+    refreshPlatform();
+    refreshInstalled();
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+      window.removeEventListener("appinstalled", onInstalled);
+      displayMode.removeEventListener?.("change", refreshInstalled);
+    };
+  }, []);
+
+  if (!android || installed) return null;
+
+  const install = async () => {
+    if (!installEvent) {
+      setShowHelp(true);
+      return;
+    }
+    await installEvent.prompt();
+    const choice = await installEvent.userChoice;
+    setInstallEvent(null);
+    if (choice.outcome === "accepted") setShowHelp(false);
+    else setShowHelp(true);
+  };
+
+  return (
+    <section aria-label="Install RivoCity Picker" className="install-card-enter mb-4 w-full max-w-md rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm sm:p-5">
+      <div className="flex items-start gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-xl text-white shadow-sm" aria-hidden="true">
+          <Package size={23} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="font-black text-slate-900">Add Picker to your home screen</h2>
+          <p className="mt-1 text-sm leading-5 text-slate-600">Open RivoCity Picker like an app from your Android home screen. No Play Store download needed.</p>
+          <button type="button" onClick={() => void install()} className="touch-button mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 font-black text-white shadow-sm hover:bg-emerald-700">
+            <DownloadIcon />{installEvent ? "Install App" : "How to Install"}
+          </button>
+        </div>
+      </div>
+      {showHelp && !installEvent ? (
+        <div role="status" className="mt-4 rounded-xl border border-emerald-100 bg-white p-3 text-sm text-slate-700">
+          <p className="font-black">Install using Chrome</p>
+          <ol className="mt-2 list-decimal space-y-1 pl-5">
+            <li>Open this website in Google Chrome on Android.</li>
+            <li>Tap Chrome's three-dot menu (⋮).</li>
+            <li>Choose <strong>Install app</strong> or <strong>Add to Home screen</strong>, then confirm.</li>
+          </ol>
+          <button type="button" onClick={() => setShowHelp(false)} className="mt-2 text-sm font-bold text-emerald-700">Got it</button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function DownloadIcon() {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v3h14v-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>;
+}
+
+
 export default function App() {
   const [profile, setProfile] = useState<PickerProfile | null>(null);
   const [worker, setWorker] = useState<SessionWorker | null>(null);
@@ -329,7 +429,7 @@ export default function App() {
   }
 
   if (loading) return <div className="app-viewport flex items-center justify-center px-4 text-center text-sm font-bold text-slate-500">Loading RivoCity Picker…</div>;
-  if (!profile) return <RegisterOrLogin loginId={loginId} email={email} password={password} setLoginId={setLoginId} setEmail={setEmail} setPassword={setPassword} onSignIn={signIn} signingIn={signingIn} error={error} />;
+  if (!profile) return <div className="app-viewport flex flex-col items-center justify-center bg-slate-50 px-3 py-6 sm:px-4"><InstallAppCard /><RegisterOrLogin loginId={loginId} email={email} password={password} setLoginId={setLoginId} setEmail={setEmail} setPassword={setPassword} onSignIn={signIn} signingIn={signingIn} error={error} /></div>;
 
   const applicationPending = profile.applicationStatus !== "approved";
   return (
@@ -580,6 +680,7 @@ function Profile({ profile, assignedVendor, registrationDetails, itemsPicked, or
       <p className="mt-2 inline-flex max-w-full items-center gap-2 break-all rounded-lg bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-800"><Fingerprint size={17} className="shrink-0" />{profile.pickerLoginId || "Picker ID unavailable"}</p>
       <p className="mt-2 text-xs text-slate-500">Application: <span className="font-bold capitalize">{profile.applicationStatus}</span></p>
     </div>
+    <InstallAppCard />
     <div className="rounded-2xl border bg-white p-4 sm:p-5"><h2 className="font-black">Personal details</h2><div className="mt-3 space-y-1">
       <InfoRow icon={<Phone size={16} />} label="Mobile number" value={profile.phone} /><InfoRow icon={<Mail size={16} />} label="Email" value={profile.email} />
       <InfoRow icon={<MapPin size={16} />} label="City" value={profile.city} /><InfoRow icon={<MapPinned size={16} />} label="Area / locality" value={profile.locality} />
