@@ -449,18 +449,18 @@ export default function App() {
 
   const applicationPending = profile.applicationStatus !== "approved";
   return (
-    <div className="app-viewport bg-slate-50 text-slate-900">
-      <header className="app-header sticky top-0 z-20 border-b bg-white">
-        <div className="mx-auto flex h-16 w-full max-w-xl items-center gap-3 px-3 sm:px-4">
+    <div className="app-viewport picker-app-shell text-slate-900">
+      <header className="app-header picker-app-header sticky top-0 z-20 border-b border-slate-200/80 bg-white/95">
+        <div className="mx-auto flex h-[4.25rem] w-full max-w-2xl items-center gap-3 px-4 sm:px-6">
           {tab !== "picks" && !applicationPending ? <button type="button" onClick={goBack} aria-label="Back to orders" className="touch-target flex shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"><ArrowLeft size={20} /></button> : null}
           <div className="min-w-0 flex-1">
-            <div className="truncate text-xl font-black tracking-tight">RivoCity <span className="text-emerald-600">Picker</span></div>
-            <div className="text-[10px] font-bold tracking-widest text-slate-400">PICKING WORKSPACE</div>
+            <div className="truncate text-xl font-black tracking-tight text-slate-950">RivoCity <span className="text-emerald-600">Picker</span></div>
+            <div className="mt-0.5 text-[10px] font-bold tracking-[0.18em] text-slate-400">PICKING WORKSPACE</div>
           </div>
           <button
             type="button"
             onClick={() => void signOut()}
-            className="touch-target flex shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+            className="flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-700"
             aria-label="Log out"
             title="Log out"
           >
@@ -469,7 +469,7 @@ export default function App() {
           </button>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-xl px-3 py-4 pb-28 sm:px-4 sm:py-5">
+      <main className="mx-auto w-full max-w-2xl px-4 py-5 pb-28 sm:px-6 sm:py-7">
         {error ? <div role="alert" className="mb-4 break-words rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
         {applicationPending ? <ApplicationState profile={profile} /> : <>
           {tab === "picks" ? <Picks worker={worker} availableOrders={availableOrders} myOrders={myOrders} laneName={laneName} onClaim={claimOrder} onPick={markPicked} /> : null}
@@ -478,7 +478,7 @@ export default function App() {
         </>}
       </main>
       {!applicationPending ? <nav aria-label="Main navigation" className="bottom-navigation fixed inset-x-0 bottom-0 z-30 border-t bg-white">
-        <div className="mx-auto grid h-16 w-full max-w-xl grid-cols-3 px-2">
+        <div className="mx-auto grid h-16 w-full max-w-2xl grid-cols-3 px-3">
           <NavButton active={tab === "picks"} icon={<Package size={19} />} label="Orders" onClick={() => setTab("picks")} />
           <NavButton active={tab === "history"} icon={<History size={19} />} label="History" onClick={() => setTab("history")} />
           <NavButton active={tab === "profile"} icon={<UserRound size={19} />} label="Profile" onClick={() => setTab("profile")} />
