@@ -66,10 +66,12 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 BEGIN
-  IF NEW.order_status IN ('accepted', 'preparing')
-     AND (TG_OP = 'INSERT' OR NEW.order_status IS DISTINCT FROM OLD.order_status)
-  THEN
-    PERFORM public.auto_assign_picker_tasks_for_order(NEW.id);
+  IF NEW.order_status IN ('accepted', 'preparing') THEN
+    IF TG_OP = 'INSERT' THEN
+      PERFORM public.auto_assign_picker_tasks_for_order(NEW.id);
+    ELSIF NEW.order_status IS DISTINCT FROM OLD.order_status THEN
+      PERFORM public.auto_assign_picker_tasks_for_order(NEW.id);
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -494,6 +496,24 @@ $$;
 
 REVOKE ALL ON FUNCTION public.mark_picker_task_picked(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.mark_picker_task_picked(uuid) TO authenticated;
+
+DROP POLICY IF EXISTS "Vendors can create picker requests" ON public.picker_vendor_requests;
+CREATE POLICY "Vendors can create picker requests"
+on public.picker_vendor_requests for insert to authenticated
+with check (
+  exists (
+    select 1 from public.vendors v
+    where v.id = picker_vendor_requests.vendor_id
+      and v.auth_user_id = (select auth.uid())
+  )
+  and exists (
+    select 1 from public.picker_profiles p
+    where p.id = picker_vendor_requests.picker_id
+      and p.application_status = 'approved'
+      and p.availability_status = 'available'
+      and p.created_by_vendor_id IS NULL
+  )
+);
 
 -- Keep vendor-created Picker visibility private to their owning vendor, and
 -- let active Pickers read only that vendor's orders/items/tasks.
