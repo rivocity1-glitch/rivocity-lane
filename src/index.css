@@ -41,3 +41,50 @@ button:focus-visible { outline: 2px solid #059669; outline-offset: 2px; }
 .install-card-enter { animation: install-card-in 180ms ease-out both; }
 @keyframes install-card-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { .install-card-enter { animation: none; } }
+
+
+/* Picker workspace polish */
+.picker-app-shell {
+  background:
+    radial-gradient(ellipse at top left, rgba(16, 185, 129, 0.055), transparent 36rem),
+    #f8fafc;
+}
+.picker-app-header {
+  box-shadow: 0 3px 14px rgba(15, 23, 42, 0.035);
+  backdrop-filter: blur(14px);
+}
+.picker-app-shell main > section {
+  animation: picker-content-in 220ms ease-out both;
+}
+.picker-app-shell main h1 {
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+.picker-app-shell main article,
+.picker-app-shell main [role="status"] {
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.picker-app-shell main article:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.055);
+}
+.bottom-navigation button {
+  min-height: 3.75rem;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.bottom-navigation button[aria-current="page"],
+.bottom-navigation button[aria-selected="true"] {
+  color: #047857;
+}
+@keyframes picker-content-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 420px) {
+  .picker-app-header .text-xl { font-size: 1.08rem; }
+  .picker-app-header button { padding-left: 0.7rem; padding-right: 0.7rem; }
+  .picker-app-shell main { padding-top: 1.15rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .picker-app-shell main > section { animation: none; }
+}
