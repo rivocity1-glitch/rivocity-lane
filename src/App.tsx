@@ -7,7 +7,7 @@ import { supabase } from "./lib/supabase";
 import { SessionWorker, Task, PickerProfile } from "./types";
 
 type Tab = "picks" | "history" | "profile";
-type PickerOrder = { id: string; orderNumber: string; status: string; claimedAt: string | null; tasks: Task[] };
+type PickerOrder = { id: string; orderNumber: string; status: string; claimedAt: string | null; claimedWorkerId: string | null; tasks: Task[] };
 type RegistrationDetails = { address: string | null; createdAt: string | null };
 const emptyRegistrationDetails: RegistrationDetails = { address: null, createdAt: null };
 
@@ -45,7 +45,7 @@ export default function App() {
 
       const { data: p, error: profileError } = await supabase
         .from("picker_profiles")
-        .select("id,auth_user_id,picker_login_id,email,full_name,phone,city,locality,pincode,latitude,longitude,availability_status,application_status")
+        .select("id,auth_user_id,picker_login_id,email,full_name,phone,city,locality,pincode,latitude,longitude,availability_status,application_status,registration_source,created_by_vendor_id")
         .eq("auth_user_id", user.id).maybeSingle();
       if (profileError) throw profileError;
       if (!p) {
@@ -77,9 +77,24 @@ export default function App() {
         createdAt: typeof user.created_at === "string" ? user.created_at : null,
       });
 
-      const { data: workerRow, error: workerError } = await supabase
-        .from("vendor_workers").select("id,vendor_id,auth_user_id,worker_name")
-        .eq("auth_user_id", user.id).eq("status", "active").maybeSingle();
+      // Vendor-created Pickers are permanently tied to their creating vendor.
+      // Reconcile a missing/inactive worker link on login through the secure RPC.
+      if (p.application_status === "approved"
+          && p.registration_source === "vendor"
+          && p.created_by_vendor_id) {
+        const { error: linkError } = await supabase.rpc("ensure_picker_vendor_link");
+        if (linkError) throw linkError;
+      }
+
+      const workerQuery = supabase
+        .from("vendor_workers")
+        .select("id,vendor_id,auth_user_id,worker_name")
+        .eq("auth_user_id", user.id)
+        .eq("status", "active");
+      const scopedWorkerQuery = p.registration_source === "vendor" && p.created_by_vendor_id
+        ? workerQuery.eq("vendor_id", p.created_by_vendor_id)
+        : workerQuery;
+      const { data: workerRow, error: workerError } = await scopedWorkerQuery.maybeSingle();
       if (workerError) throw workerError;
       if (!workerRow) {
         setWorker(null); setOrders([]); setTasks([]); setHistoryTasks([]); setLaneName(null);
@@ -90,7 +105,7 @@ export default function App() {
       setWorker({ id: workerRow.id, vendorId: workerRow.vendor_id, authUserId: workerRow.auth_user_id, name: workerRow.worker_name });
       const { data: vendorRow, error: vendorError } = await supabase
         .from("vendors")
-        .select("id,shop_name")
+        .select("id,shop_name,auth_user_id")
         .eq("id", workerRow.vendor_id)
         .maybeSingle();
       if (vendorError) console.warn("Vendor name could not be loaded:", vendorError);
@@ -114,7 +129,6 @@ export default function App() {
         .select("id,order_number,order_status,picker_worker_id,picker_claimed_at,created_at")
         .eq("vendor_id", workerRow.vendor_id)
         .in("order_status", ["accepted", "preparing"])
-        .or("picker_worker_id.is.null,picker_worker_id.eq." + workerRow.id)
         .order("created_at", { ascending: true });
       if (ordersError) throw ordersError;
       const activeOrders = orderRows || [];
@@ -163,6 +177,7 @@ export default function App() {
       setOrders(activeOrders.map((order: any) => ({
         id: order.id, orderNumber: order.order_number || "—", status: order.order_status,
         claimedAt: order.picker_worker_id === workerRow.id ? order.picker_claimed_at || null : null,
+        claimedWorkerId: order.picker_worker_id || null,
         tasks: mappedActiveTasks.filter(task => activeItemsById.get(task.orderItemId)?.order_id === order.id),
       })));
 
@@ -234,8 +249,15 @@ export default function App() {
     return () => { void supabase.removeChannel(channel); };
   }, [worker?.id, worker?.vendorId, load]);
 
-  const availableOrders = useMemo(() => orders.filter(order => !order.claimedAt && order.tasks.some(task => task.status === "assigned")), [orders]);
-  const myOrders = useMemo(() => orders.filter(order => Boolean(order.claimedAt) && order.tasks.some(task => task.status === "assigned")), [orders]);
+  const availableOrders = useMemo(() => orders.filter(order =>
+    !order.claimedWorkerId
+    && order.tasks.some(task => task.status === "assigned")
+    && order.tasks.every(task => task.status === "picked" || !task.workerId || task.workerId === worker?.id)
+  ), [orders, worker?.id]);
+  const myOrders = useMemo(() => orders.filter(order =>
+    order.claimedWorkerId === worker?.id
+    && order.tasks.some(task => task.status === "assigned")
+  ), [orders, worker?.id]);
   const completedCount = historyTasks.reduce((total, task) => total + task.quantity, 0);
   const ordersWorked = new Set(historyTasks.map(task => task.orderNumber)).size;
 
@@ -253,22 +275,20 @@ export default function App() {
   async function markPicked(taskId: string) {
     if (!worker) { setError("Picker worker is not active."); return; }
     const task = tasks.find(item => item.id === taskId);
-    if (!task) { await load(); return; }
-    const order = orders.find(item => item.orderNumber === task.orderNumber);
-    if (!order) { await load(); return; }
+    if (!task) { await load(); setError("Picking task was refreshed. Please try again."); return; }
+    const order = orders.find(item => item.tasks.some(candidate => candidate.id === taskId));
+    if (!order) { await load(); setError("Order context is unavailable. Please refresh and retry."); return; }
 
-    const { data: claimRow, error: claimReadError } = await supabase.from("orders")
-      .select("picker_worker_id").eq("id", order.id).eq("vendor_id", worker.vendorId).maybeSingle();
-    if (claimReadError) { setError(claimReadError.message); return; }
-    if (claimRow?.picker_worker_id !== worker.id) { await load(); setError("This order is not assigned to you."); return; }
-
-    const now = new Date().toISOString();
-    const { data, error: updateError } = await supabase.from("order_item_picking_tasks")
-      .update({ status: "picked", worker_id: worker.id, picked_at: now, updated_at: now })
-      .eq("id", taskId).eq("vendor_id", worker.vendorId).eq("status", "assigned")
-      .select("id,status,worker_id,picked_at").maybeSingle();
-    if (updateError) { setError(updateError.message); return; }
-    if (!data) { await load(); return; }
+    const { data: picked, error: pickError } = await supabase.rpc(
+      "mark_picker_task_picked",
+      { p_task_id: taskId }
+    );
+    if (pickError) { setError(pickError.message); return; }
+    if (picked !== true) {
+      await load();
+      setError("This item is already picked or the order is assigned to another Picker.");
+      return;
+    }
     await load();
   }
 
