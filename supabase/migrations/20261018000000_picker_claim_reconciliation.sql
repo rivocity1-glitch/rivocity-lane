@@ -362,6 +362,15 @@ BEGIN
 
   v_is_vendor_owner := v_worker.auth_user_id = v_vendor_owner_auth_id;
 
+  IF NOT v_is_vendor_owner AND EXISTS (
+    SELECT 1
+    FROM public.picker_profiles p
+    WHERE p.auth_user_id = v_worker.auth_user_id
+      AND p.application_status <> 'approved'
+  ) THEN
+    RAISE EXCEPTION 'Picker account is not approved';
+  END IF;
+
   -- Ensure legacy accepted/preparing orders have one task per line item.
   PERFORM public.auto_assign_picker_tasks_for_order(p_order_id);
 
@@ -474,6 +483,20 @@ BEGIN
 
   IF v_worker.id IS NULL THEN
     RAISE EXCEPTION 'Active Picker worker record not found for this session';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM public.picker_profiles p
+    WHERE p.auth_user_id = v_worker.auth_user_id
+      AND p.application_status <> 'approved'
+  ) AND NOT EXISTS (
+    SELECT 1
+    FROM public.vendors v
+    WHERE v.id = v_worker.vendor_id
+      AND v.auth_user_id = v_worker.auth_user_id
+  ) THEN
+    RAISE EXCEPTION 'Picker account is not approved';
   END IF;
 
   SELECT t.id, t.order_item_id, t.vendor_id, t.worker_id, t.status
