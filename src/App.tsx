@@ -427,7 +427,7 @@ export default function App() {
 
   async function signIn(event: React.FormEvent) {
     event.preventDefault(); setSigningIn(true); setError(null);
-    if (!/^(?:Rpicker|PC)-[0-9]{4}$/.test(loginId.trim()) || password.length < 1 || password.length > 4) {
+    if (!/^PC-[0-9]{4}$/.test(loginId.trim()) || password.length < 1 || password.length > 4) {
       setError("Enter a valid Picker ID and a password of maximum 4 characters.");
       setSigningIn(false); return;
     }
@@ -576,7 +576,7 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
       {(error || localError) ? <div role="alert" className="mt-4 break-words rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error || localError}</div> : null}
       {message ? <div role="status" className="mt-4 break-words rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</div> : null}
       {mode === "login" ? <label className="mt-5 block text-xs font-bold text-slate-600">Picker ID
-        <input value={loginId} onChange={event => setLoginId(event.target.value)} placeholder="PC-1234 or Rpicker-1234" autoComplete="username" maxLength={12} className="form-control mt-1 w-full rounded-xl border px-3" />
+        <input value={loginId} onChange={event => setLoginId(event.target.value)} placeholder="PC-1234" autoComplete="username" maxLength={12} className="form-control mt-1 w-full rounded-xl border px-3" />
       </label> : <>
         <FormField label="Full name" value={name} onChange={setName} autoComplete="name" required />
         <FormField label="Mobile number" value={phone} onChange={setPhone} type="tel" autoComplete="tel" required />
