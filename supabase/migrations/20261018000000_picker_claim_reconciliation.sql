@@ -632,8 +632,40 @@ WHERE oi.id = t.order_item_id
   AND o.picker_worker_id IS NULL
   AND o.order_status IN ('accepted', 'preparing');
 
+-- Release abandoned claims held by workers that are no longer active,
+-- provided no item from the order was already picked.
+UPDATE public.orders o
+SET picker_worker_id = NULL,
+    picker_claimed_at = NULL
+WHERE o.order_status IN ('accepted', 'preparing')
+  AND o.picker_worker_id IS NOT NULL
+  AND EXISTS (
+    SELECT 1
+    FROM public.vendor_workers old_worker
+    WHERE old_worker.id = o.picker_worker_id
+      AND old_worker.vendor_id = o.vendor_id
+      AND old_worker.status <> 'active'
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM public.order_items oi
+    JOIN public.order_item_picking_tasks t ON t.order_item_id = oi.id
+    WHERE oi.order_id = o.id
+      AND t.vendor_id = o.vendor_id
+      AND t.status = 'picked'
+  );
+
+UPDATE public.order_item_picking_tasks t
+SET worker_id = NULL,
+    updated_at = now()
+FROM public.vendor_workers old_worker
+WHERE t.worker_id = old_worker.id
+  AND t.vendor_id = old_worker.vendor_id
+  AND t.status = 'assigned'
+  AND old_worker.status <> 'active';
+
 -- Backfill any accepted/preparing orders created before the trigger existed.
-DO $$
+DO $
 DECLARE
   v_order_id uuid;
 BEGIN
