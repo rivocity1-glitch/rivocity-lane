@@ -455,7 +455,7 @@ export default function App() {
           {tab !== "picks" && !applicationPending ? <button type="button" onClick={goBack} aria-label="Back to orders" className="touch-target flex shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"><ArrowLeft size={20} /></button> : null}
           <div className="min-w-0 flex-1">
             <div className="truncate text-xl font-black tracking-tight text-slate-950">{assignedVendor.name || "RivoCity"} <span className="text-emerald-600">Picker</span></div>
-            <div className="mt-0.5 truncate text-[10px] font-bold tracking-[0.16em] text-slate-400">{assignedVendor.name ? "ASSIGNED VENDOR" : "PICKING WORKSPACE"}</div>
+            <div className="mt-0.5 truncate text-[10px] font-bold tracking-[0.16em] text-slate-400">{assignedVendor.name ? "YOUR WORKPLACE" : "PICKING WORKSPACE"}</div>
           </div>
           {!applicationPending ? (
             <button
