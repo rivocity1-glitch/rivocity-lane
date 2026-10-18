@@ -292,8 +292,10 @@ BEGIN
     IF v_worker.vendor_id IS DISTINCT FROM v_picker.created_by_vendor_id THEN
       RAISE EXCEPTION 'Vendor-created Picker link does not match its original vendor';
     END IF;
+    -- Preserve an intentional vendor deactivation; only an explicit vendor
+    -- re-link action may reactivate an existing inactive worker.
     UPDATE public.vendor_workers
-    SET worker_name = v_picker.full_name, status = 'active', updated_at = now()
+    SET worker_name = v_picker.full_name, updated_at = now()
     WHERE id = v_worker.id;
   ELSE
     INSERT INTO public.vendor_workers(vendor_id, auth_user_id, worker_name, status)
