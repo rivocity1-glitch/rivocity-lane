@@ -1,4 +1,4 @@
-const CACHE_NAME = "rivocity-lane-v2";
+const CACHE_NAME = "rivocity-lane-v3";
 const SHELL_URLS = ["/", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
