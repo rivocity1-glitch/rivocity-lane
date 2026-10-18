@@ -7,6 +7,15 @@
 
 BEGIN;
 
+-- Use a shared Picker pool until a worker explicitly claims the order.
+ALTER TABLE public.order_item_picking_tasks
+  ALTER COLUMN worker_id DROP NOT NULL;
+
+ALTER TABLE public.orders
+  ADD COLUMN IF NOT EXISTS picker_worker_id uuid
+    REFERENCES public.vendor_workers(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS picker_claimed_at timestamptz;
+
 -- ------------------------------------------------------------
 -- 1. Automatic basket for every picking order
 -- ------------------------------------------------------------
