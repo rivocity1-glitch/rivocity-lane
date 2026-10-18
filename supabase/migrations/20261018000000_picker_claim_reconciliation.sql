@@ -88,6 +88,45 @@ BEGIN
 END;
 $$;
 
+-- Vendor-scoped repair RPC: vendors may repair picking tasks only for their own order.
+CREATE OR REPLACE FUNCTION public.repair_vendor_order_picking_tasks(p_order_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $
+DECLARE
+  v_order record;
+BEGIN
+  SELECT o.id, o.vendor_id, o.order_status
+    INTO v_order
+  FROM public.orders o
+  WHERE o.id = p_order_id;
+
+  IF v_order.id IS NULL THEN
+    RAISE EXCEPTION 'Order not found';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM public.vendors v
+    WHERE v.id = v_order.vendor_id
+      AND v.auth_user_id = (SELECT auth.uid())
+  ) THEN
+    RAISE EXCEPTION 'You can only repair picking tasks for your own store';
+  END IF;
+
+  IF v_order.order_status NOT IN ('accepted', 'preparing') THEN
+    RETURN false;
+  END IF;
+
+  PERFORM public.auto_assign_picker_tasks_for_order(p_order_id);
+  RETURN true;
+END;
+$;
+
+REVOKE ALL ON FUNCTION public.repair_vendor_order_picking_tasks(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.repair_vendor_order_picking_tasks(uuid) TO authenticated;
+
 CREATE OR REPLACE FUNCTION public.trigger_auto_assign_picker_order()
 RETURNS trigger
 LANGUAGE plpgsql
