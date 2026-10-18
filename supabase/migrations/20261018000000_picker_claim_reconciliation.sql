@@ -687,7 +687,7 @@ WHERE t.worker_id = old_worker.id
   AND old_worker.status <> 'active';
 
 -- Backfill any accepted/preparing orders created before the trigger existed.
-DO $
+DO $$
 DECLARE
   v_order_id uuid;
 BEGIN
