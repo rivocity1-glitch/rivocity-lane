@@ -252,12 +252,12 @@ RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
 BEGIN
   PERFORM public.auto_assign_picker_tasks_for_order(NEW.order_id);
   RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS
   trg_auto_assign_picker_order_item
