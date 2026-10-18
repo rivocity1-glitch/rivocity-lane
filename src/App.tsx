@@ -11,6 +11,122 @@ type PickerOrder = { id: string; orderNumber: string; status: string; claimedAt:
 type RegistrationDetails = { address: string | null; createdAt: string | null };
 const emptyRegistrationDetails: RegistrationDetails = { address: null, createdAt: null };
 
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
+let pendingPickerInstallPrompt: BeforeInstallPromptEvent | null = null;
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    pendingPickerInstallPrompt = event as BeforeInstallPromptEvent;
+    window.dispatchEvent(new Event("rivocity:installprompt"));
+  });
+}
+
+
+function isAndroidDevice() {
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  return /android/i.test(nav.userAgentData?.platform || navigator.userAgent);
+}
+
+function isStandaloneDisplay() {
+  return window.matchMedia("(display-mode: standalone)").matches
+    || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+}
+
+function InstallAppCard() {
+  const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(() => pendingPickerInstallPrompt);
+  const [installed, setInstalled] = useState(isStandaloneDisplay);
+  const [android, setAndroid] = useState(isAndroidDevice);
+  const [showHelp, setShowHelp] = useState(false);
+
+  useEffect(() => {
+    const refreshPlatform = () => setAndroid(isAndroidDevice());
+    const displayMode = window.matchMedia("(display-mode: standalone)");
+    const refreshInstalled = () => setInstalled(isStandaloneDisplay());
+
+    const onBeforeInstall = (event: Event) => {
+      event.preventDefault();
+      pendingPickerInstallPrompt = event as BeforeInstallPromptEvent;
+      setInstallEvent(pendingPickerInstallPrompt);
+    };
+    const onInstallPromptAvailable = () => setInstallEvent(pendingPickerInstallPrompt);
+    const onInstalled = () => {
+      setInstalled(true);
+      setInstallEvent(null);
+      pendingPickerInstallPrompt = null;
+      setShowHelp(false);
+    };
+
+    window.addEventListener("beforeinstallprompt", onBeforeInstall);
+    window.addEventListener("rivocity:installprompt", onInstallPromptAvailable);
+    window.addEventListener("appinstalled", onInstalled);
+    displayMode.addEventListener?.("change", refreshInstalled);
+    refreshPlatform();
+    refreshInstalled();
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+      window.removeEventListener("rivocity:installprompt", onInstallPromptAvailable);
+      window.removeEventListener("appinstalled", onInstalled);
+      displayMode.removeEventListener?.("change", refreshInstalled);
+    };
+  }, []);
+
+  if (!android || installed) return null;
+
+  const install = async () => {
+    if (!installEvent) {
+      setShowHelp(true);
+      return;
+    }
+    await installEvent.prompt();
+    const choice = await installEvent.userChoice;
+    setInstallEvent(null);
+    pendingPickerInstallPrompt = null;
+    if (choice.outcome === "accepted") setShowHelp(false);
+    else setShowHelp(true);
+  };
+
+  return (
+    <section aria-label="Install RivoCity Picker" className="picker-action-button install-card-enter mb-4 w-full max-w-md rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm sm:p-5">
+      <div className="flex items-start gap-3">
+        <div className="picker-action-button flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-xl text-white shadow-sm" aria-hidden="true">
+          <Package size={23} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="font-black text-slate-900">Add Picker to your home screen</h2>
+          <p className="mt-1 text-sm leading-5 text-slate-600">Open RivoCity Picker like an app from your Android home screen. No Play Store download needed.</p>
+          <button type="button" onClick={() => void install()} className="picker-action-button touch-button mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 font-black text-white shadow-sm hover:bg-emerald-700">
+            <DownloadIcon />{installEvent ? "Install App" : "How to Install"}
+          </button>
+        </div>
+      </div>
+      {showHelp && !installEvent ? (
+        <div role="status" className="picker-action-button mt-4 rounded-xl border border-emerald-100 bg-white p-3 text-sm text-slate-700">
+          <p className="font-black">Install using Chrome</p>
+          <ol className="mt-2 list-decimal space-y-1 pl-5">
+            <li>Open this website in Google Chrome on Android.</li>
+            <li>Tap Chrome's three-dot menu (⋮).</li>
+            <li>Choose <strong>Install app</strong> or <strong>Add to Home screen</strong>, then confirm.</li>
+          </ol>
+          <button type="button" onClick={() => setShowHelp(false)} className="mt-2 text-sm font-bold text-emerald-700">Got it</button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function DownloadIcon() {
+  return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v3h14v-3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>;
+}
+
+
 export default function App() {
   const [profile, setProfile] = useState<PickerProfile | null>(null);
   const [worker, setWorker] = useState<SessionWorker | null>(null);
@@ -311,7 +427,7 @@ export default function App() {
 
   async function signIn(event: React.FormEvent) {
     event.preventDefault(); setSigningIn(true); setError(null);
-    if (!/^Rpicker-[0-9]{4}$/.test(loginId.trim()) || password.length < 1 || password.length > 4) {
+    if (!/^PC-[0-9]{4}$/.test(loginId.trim()) || password.length < 1 || password.length > 4) {
       setError("Enter a valid Picker ID and a password of maximum 4 characters.");
       setSigningIn(false); return;
     }
@@ -333,19 +449,30 @@ export default function App() {
 
   const applicationPending = profile.applicationStatus !== "approved";
   return (
-    <div className="app-viewport bg-slate-50 text-slate-900">
-      <header className="app-header sticky top-0 z-20 border-b bg-white">
-        <div className="mx-auto flex h-16 w-full max-w-xl items-center gap-3 px-3 sm:px-4">
-          {tab !== "picks" && !applicationPending ? <button type="button" onClick={goBack} aria-label="Back to orders" className="touch-target flex shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"><ArrowLeft size={20} /></button> : null}
+    <div className="app-viewport picker-app-shell text-slate-900">
+      <header className="app-header picker-app-header sticky top-0 z-20 border-b border-slate-200/80 bg-white/95">
+        <div className="mx-auto flex h-[4.25rem] w-full max-w-2xl items-center gap-3 px-4 sm:px-6">
+          {tab !== "picks" && !applicationPending ? <button type="button" onClick={goBack} aria-label="Back to orders" className="picker-action-button touch-target flex shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"><ArrowLeft size={20} /></button> : null}
           <div className="min-w-0 flex-1">
-            <div className="truncate text-xl font-black tracking-tight">RivoCity <span className="text-emerald-600">Picker</span></div>
-            <div className="text-[10px] font-bold tracking-widest text-slate-400">PICKING WORKSPACE</div>
+            <div className="truncate text-xl font-black tracking-tight text-slate-950">{assignedVendor.name || "RivoCity"} <span className="text-emerald-600">Picker</span></div>
+            <div className="mt-0.5 truncate text-[10px] font-bold tracking-[0.16em] text-slate-400">{assignedVendor.name ? "YOUR WORKPLACE" : "PICKING WORKSPACE"}</div>
           </div>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700"><UserRound size={19} /></div>
+          {!applicationPending ? (
+            <button
+              type="button"
+              onClick={() => setTab("profile")}
+              className="picker-action-button flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+              aria-label="Open profile"
+              title="Open profile"
+            >
+              <UserRound size={17} />
+              <span>Profile</span>
+            </button>
+          ) : null}
         </div>
       </header>
-      <main className="mx-auto w-full max-w-xl px-3 py-4 pb-28 sm:px-4 sm:py-5">
-        {error ? <div role="alert" className="mb-4 break-words rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+      <main className="mx-auto w-full max-w-2xl px-4 py-5 pb-36 sm:px-6 sm:py-7 sm:pb-36">
+        {error ? <div role="alert" className="picker-action-button mb-4 break-words rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
         {applicationPending ? <ApplicationState profile={profile} /> : <>
           {tab === "picks" ? <Picks worker={worker} availableOrders={availableOrders} myOrders={myOrders} laneName={laneName} onClaim={claimOrder} onPick={markPicked} /> : null}
           {tab === "history" ? <HistoryView tasks={historyTasks} completedCount={completedCount} refreshing={refreshing} onRefresh={() => void load(true)} /> : null}
@@ -353,7 +480,7 @@ export default function App() {
         </>}
       </main>
       {!applicationPending ? <nav aria-label="Main navigation" className="bottom-navigation fixed inset-x-0 bottom-0 z-30 border-t bg-white">
-        <div className="mx-auto grid h-16 w-full max-w-xl grid-cols-3 px-2">
+        <div className="mx-auto grid h-16 w-full max-w-2xl grid-cols-3 px-3">
           <NavButton active={tab === "picks"} icon={<Package size={19} />} label="Orders" onClick={() => setTab("picks")} />
           <NavButton active={tab === "history"} icon={<History size={19} />} label="History" onClick={() => setTab("history")} />
           <NavButton active={tab === "profile"} icon={<UserRound size={19} />} label="Profile" onClick={() => setTab("profile")} />
@@ -376,7 +503,7 @@ function Picks({ worker, availableOrders, myOrders, laneName, onClaim, onPick }:
       {myOrders.map(order => <OrderCard key={order.id} order={order} claimed onClaim={onClaim} onPick={onPick} />)}
     </div> : <div className="space-y-4"><div className="text-xs font-black uppercase tracking-wider text-slate-500">Available orders</div>
       {availableOrders.length ? availableOrders.map(order => <OrderCard key={order.id} order={order} claimed={false} onClaim={onClaim} onPick={onPick} />) :
-        <div className="rounded-2xl border bg-white p-6 text-center text-sm text-slate-500">No complete orders are waiting for a Picker.</div>}
+        <div className="picker-action-button rounded-2xl border bg-white p-6 text-center text-sm text-slate-500">No complete orders are waiting for a Picker.</div>}
     </div>}
   </section>;
 }
@@ -386,19 +513,19 @@ function OrderCard({ order, claimed, onClaim, onPick }: {
 }) {
   const remaining = order.tasks.filter(task => task.status !== "picked").length;
   const done = order.tasks.length - remaining;
-  return <article className="min-w-0 rounded-2xl border bg-white p-3 shadow-sm sm:p-4">
+  return <article className="picker-action-button min-w-0 rounded-2xl border bg-white p-3 shadow-sm sm:p-4">
     <div className="flex items-start justify-between gap-3"><div className="min-w-0">
       <div className="break-words text-xs font-black uppercase text-emerald-700">Order {order.orderNumber}</div>
       <h2 className="mt-1 text-lg font-black">{remaining === 0 && order.tasks.length ? "Order picked" : "Pick complete order"}</h2>
       <p className="mt-1 text-sm text-slate-500">{done}/{order.tasks.length} items picked</p>
-    </div><div className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase">{order.status}</div></div>
-    {!claimed ? <button type="button" onClick={() => onClaim(order.id)} className="touch-button mt-4 w-full rounded-xl bg-emerald-600 py-3.5 font-black text-white hover:bg-emerald-700">Claim This Order <ChevronRight size={18} className="ml-1 inline" /></button> :
-      <div className="mt-4 space-y-2">{order.tasks.map(task => <div key={task.id} className="min-w-0 rounded-xl border bg-slate-50 p-3">
+    </div><div className="picker-action-button shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase">{order.status}</div></div>
+    {!claimed ? <button type="button" onClick={() => onClaim(order.id)} className="picker-action-button touch-button mt-4 w-full rounded-xl bg-emerald-600 py-3.5 font-black text-white hover:bg-emerald-700">Claim This Order <ChevronRight size={18} className="ml-1 inline" /></button> :
+      <div className="mt-4 space-y-2">{order.tasks.map(task => <div key={task.id} className="picker-action-button min-w-0 rounded-xl border bg-slate-50 p-3">
         <div className="flex items-start justify-between gap-3"><div className="min-w-0 flex-1">
           <p className="break-words font-bold">{task.productName}</p><p className="mt-1 text-xs text-slate-500">Quantity: <b className="text-slate-900">{task.quantity}</b></p>
           {task.laneName || task.rackName ? <p className="mt-1 break-words text-xs font-bold text-emerald-700">Location: {task.laneName || "Store"}{task.rackName ? " → " + task.rackName : ""}</p> : <p className="mt-1 text-xs text-slate-500">No shelf location configured.</p>}
         </div>{task.status === "picked" ? <Check className="shrink-0 text-emerald-600" size={20} /> : <Clock className="shrink-0 text-slate-300" size={20} />}</div>
-        {task.status !== "picked" ? <button type="button" onClick={() => onPick(task.id)} className="touch-button mt-3 w-full rounded-xl bg-emerald-600 py-3 font-black text-white hover:bg-emerald-700">Mark Picked <ChevronRight size={17} className="ml-1 inline" /></button> : null}
+        {task.status !== "picked" ? <button type="button" onClick={() => onPick(task.id)} className="picker-action-button touch-button mt-3 w-full rounded-xl bg-emerald-600 py-3 font-black text-white hover:bg-emerald-700">Mark Picked <ChevronRight size={17} className="ml-1 inline" /></button> : null}
       </div>)}</div>}
   </article>;
 }
@@ -452,14 +579,15 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
     }, () => setLocalError("Location permission was not granted."), { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
   };
 
-  return <div className="app-viewport flex items-center justify-center bg-slate-50 px-3 py-6 sm:px-4">
-    <form onSubmit={mode === "login" ? onSignIn : register} className="my-auto w-full max-w-md rounded-2xl border bg-white p-4 shadow-sm sm:p-6">
+  return <div className="app-viewport flex flex-col items-center justify-center bg-slate-50 px-3 py-6 sm:px-4">
+    <InstallAppCard />
+    <form onSubmit={mode === "login" ? onSignIn : register} className="picker-action-button my-auto w-full max-w-md rounded-2xl border bg-white p-4 shadow-sm sm:p-6">
       <div className="text-2xl font-black">RivoCity <span className="text-emerald-600">Picker</span></div>
       <p className="mt-1 text-sm text-slate-500">{mode === "login" ? "Worker sign in" : "Register as a Picker"}</p>
-      {(error || localError) ? <div role="alert" className="mt-4 break-words rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error || localError}</div> : null}
-      {message ? <div role="status" className="mt-4 break-words rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</div> : null}
+      {(error || localError) ? <div role="alert" className="picker-action-button mt-4 break-words rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error || localError}</div> : null}
+      {message ? <div role="status" className="picker-action-button mt-4 break-words rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</div> : null}
       {mode === "login" ? <label className="mt-5 block text-xs font-bold text-slate-600">Picker ID
-        <input value={loginId} onChange={event => setLoginId(event.target.value)} placeholder="Rpicker-1234" autoComplete="username" maxLength={12} className="form-control mt-1 w-full rounded-xl border px-3" />
+        <input value={loginId} onChange={event => setLoginId(event.target.value)} placeholder="PC-1234" autoComplete="username" maxLength={12} className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
       </label> : <>
         <FormField label="Full name" value={name} onChange={setName} autoComplete="name" required />
         <FormField label="Mobile number" value={phone} onChange={setPhone} type="tel" autoComplete="tel" required />
@@ -467,19 +595,19 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
         <FormField label="Area / locality" value={locality} onChange={setLocality} autoComplete="address-level3" />
         <FormField label="Address" value={address} onChange={setAddress} autoComplete="street-address" />
         <FormField label="Pincode" value={pincode} onChange={value => setPincode(value.replace(/[^0-9]/g, "").slice(0, 6))} inputMode="numeric" autoComplete="postal-code" />
-        <button type="button" onClick={captureLocation} className="touch-button mt-3 flex w-full items-center justify-center gap-2 rounded-xl border px-3 font-bold text-slate-700"><MapPin size={17} />{lat !== null && lng !== null ? "Location captured" : "Use current location"}</button>
+        <button type="button" onClick={captureLocation} className="picker-action-button touch-button mt-3 flex w-full items-center justify-center gap-2 rounded-xl border px-3 font-bold text-slate-700"><MapPin size={17} />{lat !== null && lng !== null ? "Location captured" : "Use current location"}</button>
         {lat !== null && lng !== null ? <p className="mt-1 break-words text-xs text-slate-500">Coordinates: {lat.toFixed(5)}, {lng.toFixed(5)}</p> : null}
         <label className="mt-3 block text-xs font-bold text-slate-600">Email
-          <input value={email} onChange={event => setEmail(event.target.value)} type="email" autoComplete="email" required className="form-control mt-1 w-full rounded-xl border px-3" />
+          <input value={email} onChange={event => setEmail(event.target.value)} type="email" autoComplete="email" required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
         </label>
       </>}
       <label className="mt-3 block text-xs font-bold text-slate-600">Password (maximum 4 characters)
-        <input value={password} maxLength={4} onChange={event => setPassword(event.target.value.slice(0, 4))} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required className="form-control mt-1 w-full rounded-xl border px-3" />
+        <input value={password} maxLength={4} onChange={event => setPassword(event.target.value.slice(0, 4))} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
       </label>
-      <button disabled={signingIn || submitting} className="touch-button mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 font-black text-white disabled:opacity-60">
+      <button disabled={signingIn || submitting} className="picker-action-button touch-button mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 font-black text-white disabled:opacity-60">
         {mode === "login" ? <><LogIn size={18} />{signingIn ? "Signing in…" : "Sign In"}</> : submitting ? "Submitting…" : "Submit Registration"}
       </button>
-      <button type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setLocalError(""); setMessage(""); }} className="touch-button mt-2 w-full rounded-xl px-3 text-sm font-bold text-emerald-700">
+      <button type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setLocalError(""); setMessage(""); }} className="picker-action-button touch-button mt-2 w-full rounded-xl px-3 text-sm font-bold text-emerald-700">
         {mode === "login" ? "New Picker? Register here" : "Already registered? Sign in"}
       </button>
     </form>
@@ -491,14 +619,14 @@ function FormField({ label, value, onChange, type = "text", autoComplete, inputM
   inputMode?: "text" | "numeric" | "tel" | "email"; required?: boolean;
 }) {
   return <label className="mt-3 block text-xs font-bold text-slate-600">{label}
-    <input value={value} onChange={event => onChange(event.target.value)} type={type} autoComplete={autoComplete} inputMode={inputMode} required={required} className="form-control mt-1 w-full rounded-xl border px-3" />
+    <input value={value} onChange={event => onChange(event.target.value)} type={type} autoComplete={autoComplete} inputMode={inputMode} required={required} className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
   </label>;
 }
 
 function ApplicationState({ profile }: { profile: PickerProfile }) {
   const label = profile.applicationStatus === "pending" ? "Waiting for approval" : profile.applicationStatus === "rejected" ? "Application not approved" : "Picker access paused";
   return <section className="space-y-4"><div><p className="text-sm text-slate-500">Application status</p><h1 className="text-2xl font-black">{label}</h1></div>
-    <div className="rounded-2xl border bg-white p-5"><p className="text-sm text-slate-600">Your Picker profile is registered with RivoCity. An admin must approve it before vendors can request you.</p>
+    <div className="picker-action-button rounded-2xl border bg-white p-5"><p className="text-sm text-slate-600">Your Picker profile is registered with RivoCity. An admin must approve it before vendors can request you.</p>
       <p className="mt-4 break-words text-sm font-bold text-slate-500">Location: {profile.city}{profile.locality ? " · " + profile.locality : ""}</p>
       <InfoRow label="Picker ID" value={profile.pickerLoginId} /><InfoRow label="Registered email" value={profile.email} />
     </div>
@@ -528,21 +656,21 @@ function HistoryView({ tasks, completedCount, refreshing, onRefresh }: { tasks: 
   return <section className="space-y-4">
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
-        {selectedOrder ? <button type="button" onClick={() => setSelectedOrderNumber(null)} className="mb-2 inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm font-bold text-emerald-700"><ArrowLeft size={18} />Back to history</button> : null}
+        {selectedOrder ? <button type="button" onClick={() => setSelectedOrderNumber(null)} className="picker-action-button mb-2 inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm font-bold text-emerald-700"><ArrowLeft size={18} />Back to history</button> : null}
         <p className="text-sm text-slate-500">Your completed picks</p>
         <h1 className="break-words text-2xl font-black">{selectedOrder ? "Order " + selectedOrder.orderNumber : "History"}</h1>
       </div>
-      <button type="button" onClick={onRefresh} aria-label="Refresh history" className="touch-target flex shrink-0 items-center justify-center rounded-xl border bg-white text-slate-700"><RefreshCw size={18} className={refreshing ? "animate-spin" : ""} /></button>
+      <button type="button" onClick={onRefresh} aria-label="Refresh history" className="picker-action-button touch-target flex shrink-0 items-center justify-center rounded-xl border bg-white text-slate-700"><RefreshCw size={18} className={refreshing ? "animate-spin" : ""} /></button>
     </div>
     {!selectedOrder ? <>
-      <div className="rounded-2xl border bg-white p-4">
+      <div className="picker-action-button rounded-2xl border bg-white p-4">
         <p className="text-xs font-bold text-slate-500">TOTAL ITEMS PICKED</p>
         <p className="mt-1 text-3xl font-black">{completedCount}</p>
         <p className="mt-1 text-sm text-slate-500">{groupedOrders.length} completed orders · {tasks.length} completed picking tasks</p>
       </div>
-      {!groupedOrders.length ? <div className="rounded-xl border bg-white p-6 text-center text-sm text-slate-500">No completed picks found for this Picker yet.</div> :
+      {!groupedOrders.length ? <div className="picker-action-button rounded-xl border bg-white p-6 text-center text-sm text-slate-500">No completed picks found for this Picker yet.</div> :
         <div className="space-y-3">{groupedOrders.map((order) => (
-          <button key={order.orderNumber} type="button" onClick={() => setSelectedOrderNumber(order.orderNumber)} className="flex min-h-24 w-full min-w-0 items-center justify-between gap-3 rounded-xl border bg-white p-4 text-left shadow-sm hover:border-emerald-300">
+          <button key={order.orderNumber} type="button" onClick={() => setSelectedOrderNumber(order.orderNumber)} className="picker-action-button flex min-h-24 w-full min-w-0 items-center justify-between gap-3 rounded-xl border bg-white p-4 text-left shadow-sm hover:border-emerald-300">
             <div className="min-w-0">
               <div className="break-words font-bold">Order {order.orderNumber}</div>
               <div className="mt-1 text-xs text-slate-500">{order.tasks.length} completed picking tasks · {order.itemCount} items</div>
@@ -552,13 +680,13 @@ function HistoryView({ tasks, completedCount, refreshing, onRefresh }: { tasks: 
           </button>
         ))}</div>}
     </> : <>
-      <div className="rounded-2xl border bg-white p-4">
+      <div className="picker-action-button rounded-2xl border bg-white p-4">
         <p className="text-xs font-bold text-slate-500">ITEMS PICKED IN THIS ORDER</p>
         <p className="mt-1 text-3xl font-black">{selectedOrder.itemCount}</p>
         <p className="mt-1 text-sm text-slate-500">{selectedOrder.tasks.length} completed picking tasks</p>
       </div>
       <div className="space-y-3">{selectedOrder.tasks.map((task) => (
-        <article key={task.id} className="flex min-w-0 items-start justify-between gap-3 rounded-xl border bg-white p-4">
+        <article key={task.id} className="picker-action-button flex min-w-0 items-start justify-between gap-3 rounded-xl border bg-white p-4">
           <div className="min-w-0">
             <div className="break-words font-bold">{task.productName}</div>
             <div className="mt-1 break-words text-xs text-slate-500">Quantity: {task.quantity}</div>
@@ -576,33 +704,34 @@ function Profile({ profile, assignedVendor, registrationDetails, itemsPicked, or
   onAvailability: (value: "available" | "offline") => void; onRefresh: () => void; onSignOut: () => void; refreshing: boolean;
 }) {
   return <section className="space-y-4">
-    <div className="rounded-2xl border bg-white p-4 sm:p-5"><p className="text-sm text-slate-500">Picker profile</p><h1 className="mt-1 break-words text-2xl font-black">{profile.fullName}</h1>
-      <p className="mt-2 inline-flex max-w-full items-center gap-2 break-all rounded-lg bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-800"><Fingerprint size={17} className="shrink-0" />{profile.pickerLoginId || "Picker ID unavailable"}</p>
+    <div className="picker-action-button rounded-2xl border bg-white p-4 sm:p-5"><p className="text-sm text-slate-500">Picker profile</p><h1 className="mt-1 break-words text-2xl font-black">{profile.fullName}</h1>
+      <p className="picker-action-button mt-2 inline-flex max-w-full items-center gap-2 break-all rounded-lg bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-800"><Fingerprint size={17} className="shrink-0" />{profile.pickerLoginId || "Picker ID unavailable"}</p>
       <p className="mt-2 text-xs text-slate-500">Application: <span className="font-bold capitalize">{profile.applicationStatus}</span></p>
     </div>
-    <div className="rounded-2xl border bg-white p-4 sm:p-5"><h2 className="font-black">Personal details</h2><div className="mt-3 space-y-1">
+    <InstallAppCard />
+    <div className="picker-action-button rounded-2xl border bg-white p-4 sm:p-5"><h2 className="font-black">Personal details</h2><div className="mt-3 space-y-1">
       <InfoRow icon={<Phone size={16} />} label="Mobile number" value={profile.phone} /><InfoRow icon={<Mail size={16} />} label="Email" value={profile.email} />
       <InfoRow icon={<MapPin size={16} />} label="City" value={profile.city} /><InfoRow icon={<MapPinned size={16} />} label="Area / locality" value={profile.locality} />
       <InfoRow label="Address" value={registrationDetails.address} /><InfoRow label="Pincode" value={profile.pincode} />
       <InfoRow label="Coordinates" value={profile.latitude !== null && profile.longitude !== null ? profile.latitude + ", " + profile.longitude : null} />
       {registrationDetails.createdAt ? <InfoRow icon={<CalendarDays size={16} />} label="Registered on" value={formatDate(registrationDetails.createdAt)} /> : null}
     </div></div>
-    <div className="rounded-2xl border bg-white p-4 sm:p-5"><h2 className="font-black">Assigned vendor</h2><div className="mt-3 space-y-1">
+    <div className="picker-action-button rounded-2xl border bg-white p-4 sm:p-5"><h2 className="font-black">Assigned vendor</h2><div className="mt-3 space-y-1">
       <InfoRow label="Vendor name" value={assignedVendor.name} />
       <InfoRow label="Area" value={assignedVendor.area} />
     </div></div>
-    <div className="rounded-2xl border bg-white p-4 sm:p-5"><p className="text-xs font-bold uppercase text-slate-400">Availability</p>
+    <div className="picker-action-button rounded-2xl border bg-white p-4 sm:p-5"><p className="text-xs font-bold uppercase text-slate-400">Availability</p>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <button type="button" onClick={() => onAvailability("available")} className={"touch-button rounded-xl px-2 font-bold " + (profile.availabilityStatus === "available" ? "bg-emerald-600 text-white" : "border bg-white")}>Available</button>
         <button type="button" onClick={() => onAvailability("offline")} className={"touch-button rounded-xl px-2 font-bold " + (profile.availabilityStatus === "offline" ? "bg-slate-900 text-white" : "border bg-white")}>Offline</button>
       </div><p className="mt-2 text-xs text-slate-500">Current status: <b className="capitalize">{profile.availabilityStatus}</b></p>
     </div>
-    <div className="rounded-2xl border bg-white p-4 sm:p-5"><h2 className="font-black">Picking record</h2><div className="mt-3 grid grid-cols-2 gap-3">
-      <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Items picked</p><p className="mt-1 text-2xl font-black">{itemsPicked}</p></div>
-      <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Orders worked</p><p className="mt-1 text-2xl font-black">{ordersWorked}</p></div>
+    <div className="picker-action-button rounded-2xl border bg-white p-4 sm:p-5"><h2 className="font-black">Picking record</h2><div className="mt-3 grid grid-cols-2 gap-3">
+      <div className="picker-action-button rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Items picked</p><p className="mt-1 text-2xl font-black">{itemsPicked}</p></div>
+      <div className="picker-action-button rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Orders worked</p><p className="mt-1 text-2xl font-black">{ordersWorked}</p></div>
     </div></div>
-    <button type="button" onClick={onRefresh} className="touch-button flex w-full items-center justify-center gap-2 rounded-xl border bg-white px-3 font-bold"><RefreshCw size={17} className={refreshing ? "animate-spin" : ""} />Refresh profile</button>
-    <button type="button" onClick={onSignOut} className="touch-button flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-3 font-bold text-red-600"><LogOut size={17} />Sign Out</button>
+    <button type="button" onClick={onRefresh} className="picker-action-button touch-button flex w-full items-center justify-center gap-2 rounded-xl border bg-white px-3 font-bold"><RefreshCw size={17} className={refreshing ? "animate-spin" : ""} />Refresh profile</button>
+    <button type="button" onClick={onSignOut} className="picker-action-button touch-button mb-3 flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 font-bold text-red-700"><LogOut size={17} />Log out</button>
   </section>;
 }
 
