@@ -77,7 +77,7 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_auto_assign_picker_order ON public.orders;
 CREATE TRIGGER trg_auto_assign_picker_order
-AFTER INSERT OR UPDATE OF order_status ON public.orders
+AFTER INSERT OR UPDATE ON public.orders
 FOR EACH ROW
 EXECUTE FUNCTION public.trigger_auto_assign_picker_order();
 
@@ -165,6 +165,7 @@ DECLARE
   v_vendor_id uuid;
   v_picker record;
   v_worker_id uuid;
+  v_existing_vendor_id uuid;
 BEGIN
   SELECT v.id INTO v_vendor_id
   FROM public.vendors v
@@ -194,13 +195,13 @@ BEGIN
     RAISE EXCEPTION 'Picker must be approved before being linked';
   END IF;
 
-  SELECT w.id, w.vendor_id INTO v_worker_id, v_picker.created_by_vendor_id
+  SELECT w.id, w.vendor_id INTO v_worker_id, v_existing_vendor_id
   FROM public.vendor_workers w
   WHERE w.auth_user_id = v_picker.auth_user_id
   FOR UPDATE;
 
   IF v_worker_id IS NOT NULL THEN
-    IF v_picker.created_by_vendor_id IS DISTINCT FROM v_vendor_id THEN
+    IF v_existing_vendor_id IS DISTINCT FROM v_vendor_id THEN
       RAISE EXCEPTION 'Picker is already linked to a different vendor';
     END IF;
     UPDATE public.vendor_workers
@@ -594,5 +595,147 @@ BEGIN
   END LOOP;
 END;
 $$;
+
+
+-- Admin assignment uses one server-side transaction so concurrent admin/vendor
+-- actions cannot silently attach one Picker to multiple stores.
+CREATE OR REPLACE FUNCTION public.admin_assign_picker_helper(
+  p_vendor_id uuid,
+  p_picker_id uuid,
+  p_ticket_id uuid DEFAULT NULL,
+  p_lane_id uuid DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $
+DECLARE
+  v_picker record;
+  v_worker record;
+  v_request_id uuid;
+  v_owner_auth_user_id uuid;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.admin_users a
+    WHERE a.auth_user_id = (SELECT auth.uid())
+  ) THEN
+    RAISE EXCEPTION 'Admin access required';
+  END IF;
+
+  SELECT p.id, p.auth_user_id, p.full_name, p.application_status,
+         p.registration_source, p.created_by_vendor_id
+    INTO v_picker
+  FROM public.picker_profiles p
+  WHERE p.id = p_picker_id
+  FOR UPDATE;
+
+  IF v_picker.id IS NULL THEN
+    RAISE EXCEPTION 'Picker not found';
+  END IF;
+  IF v_picker.application_status <> 'approved' THEN
+    RAISE EXCEPTION 'Picker is not approved';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = p_vendor_id) THEN
+    RAISE EXCEPTION 'Vendor not found';
+  END IF;
+  IF v_picker.registration_source = 'vendor'
+     AND v_picker.created_by_vendor_id IS NOT NULL
+     AND v_picker.created_by_vendor_id <> p_vendor_id
+  THEN
+    RAISE EXCEPTION 'Vendor-created Pickers are permanently linked to their creating vendor';
+  END IF;
+
+  IF p_lane_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.vendor_lanes l
+    WHERE l.id = p_lane_id AND l.vendor_id = p_vendor_id AND l.status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'Lane does not belong to this vendor';
+  END IF;
+
+  SELECT v.auth_user_id INTO v_owner_auth_user_id
+  FROM public.vendors v WHERE v.id = p_vendor_id;
+
+  SELECT w.id, w.vendor_id, w.status
+    INTO v_worker
+  FROM public.vendor_workers w
+  WHERE w.auth_user_id = v_picker.auth_user_id
+  FOR UPDATE;
+
+  IF v_worker.id IS NOT NULL THEN
+    IF v_worker.vendor_id <> p_vendor_id AND v_worker.status = 'active' THEN
+      RAISE EXCEPTION 'Picker is already assigned to another vendor';
+    END IF;
+    IF v_worker.vendor_id <> p_vendor_id
+       AND v_picker.registration_source = 'vendor'
+       AND v_picker.created_by_vendor_id IS NOT NULL
+    THEN
+      RAISE EXCEPTION 'Vendor-created Pickers cannot be reassigned';
+    END IF;
+    UPDATE public.vendor_workers
+    SET vendor_id = p_vendor_id, worker_name = v_picker.full_name,
+        status = 'active', updated_at = now()
+    WHERE id = v_worker.id;
+  ELSE
+    INSERT INTO public.vendor_workers(vendor_id, auth_user_id, worker_name, status)
+    VALUES (p_vendor_id, v_picker.auth_user_id, v_picker.full_name, 'active')
+    RETURNING id, vendor_id, status INTO v_worker;
+  END IF;
+
+  SELECT pvr.id INTO v_request_id
+  FROM public.picker_vendor_requests pvr
+  WHERE pvr.vendor_id = p_vendor_id
+    AND pvr.picker_id = p_picker_id
+    AND pvr.status IN ('pending', 'accepted')
+  ORDER BY pvr.requested_at DESC
+  LIMIT 1;
+
+  IF v_request_id IS NULL THEN
+    INSERT INTO public.picker_vendor_requests (
+      picker_id, vendor_id, status, requested_at, responded_at, updated_at
+    )
+    VALUES (p_picker_id, p_vendor_id, 'accepted', now(), now(), now())
+    RETURNING id INTO v_request_id;
+  ELSE
+    UPDATE public.picker_vendor_requests
+    SET status = 'accepted', responded_at = now(), updated_at = now()
+    WHERE id = v_request_id;
+  END IF;
+
+  UPDATE public.picker_profiles
+  SET availability_status = 'busy', updated_at = now()
+  WHERE id = p_picker_id;
+
+  IF p_lane_id IS NOT NULL THEN
+    UPDATE public.vendor_lane_picker_assignments
+    SET status = 'inactive', updated_at = now()
+    WHERE lane_id = p_lane_id AND status = 'active';
+
+    INSERT INTO public.vendor_lane_picker_assignments (
+      vendor_id, lane_id, worker_id, status, assigned_at
+    )
+    VALUES (p_vendor_id, p_lane_id, v_worker.id, 'active', now())
+    ON CONFLICT (lane_id) WHERE status = 'active'
+    DO UPDATE SET worker_id = EXCLUDED.worker_id,
+                  assigned_at = now(),
+                  updated_at = now();
+  END IF;
+
+  IF p_ticket_id IS NOT NULL THEN
+    UPDATE public.vendor_support_tickets
+    SET status = 'in_progress', updated_at = now()
+    WHERE id = p_ticket_id AND vendor_id = p_vendor_id
+      AND issue_type = 'picker_helper';
+  END IF;
+
+  RETURN jsonb_build_object(
+    'vendor_id', p_vendor_id, 'picker_id', p_picker_id,
+    'worker_id', v_worker.id, 'request_id', v_request_id, 'lane_id', p_lane_id
+  );
+END;
+$;
+
+REVOKE ALL ON FUNCTION public.admin_assign_picker_helper(uuid, uuid, uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.admin_assign_picker_helper(uuid, uuid, uuid, uuid) TO authenticated;
 
 COMMIT;
