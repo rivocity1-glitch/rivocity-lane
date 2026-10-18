@@ -29,6 +29,8 @@ AS $$
 DECLARE
   v_order record;
   v_item record;
+  v_has_basket_column boolean := false;
+  v_basket_id uuid;
 BEGIN
   SELECT o.id, o.vendor_id, o.order_status
     INTO v_order
@@ -39,22 +41,49 @@ BEGIN
     RETURN;
   END IF;
 
+  SELECT EXISTS (
+    SELECT 1
+    FROM information_schema.columns c
+    WHERE c.table_schema = 'public'
+      AND c.table_name = 'order_item_picking_tasks'
+      AND c.column_name = 'basket_id'
+  ) INTO v_has_basket_column;
+
+  -- Preserve optional basket wiring when the basket setup has been installed.
+  IF v_has_basket_column
+     AND to_regprocedure('public.ensure_picker_basket(uuid)') IS NOT NULL
+  THEN
+    EXECUTE 'SELECT public.ensure_picker_basket($1)'
+      INTO v_basket_id USING p_order_id;
+  END IF;
+
   FOR v_item IN
     SELECT oi.id, oi.quantity
     FROM public.order_items oi
     WHERE oi.order_id = p_order_id
   LOOP
-    INSERT INTO public.order_item_picking_tasks (
-      order_item_id, vendor_id, worker_id, quantity, status, assigned_at, updated_at
-    )
-    VALUES (
-      v_item.id, v_order.vendor_id, NULL, v_item.quantity, 'assigned', now(), now()
-    )
-    ON CONFLICT (order_item_id)
-    DO UPDATE SET
-      quantity = EXCLUDED.quantity,
-      updated_at = now()
-    WHERE public.order_item_picking_tasks.status <> 'picked';
+    IF v_has_basket_column AND v_basket_id IS NOT NULL THEN
+      EXECUTE $task$
+        INSERT INTO public.order_item_picking_tasks (
+          order_item_id, vendor_id, worker_id, quantity, status, basket_id, assigned_at, updated_at
+        )
+        VALUES ($1, $2, NULL, $3, 'assigned', $4, now(), now())
+        ON CONFLICT (order_item_id)
+        DO UPDATE SET quantity = EXCLUDED.quantity, basket_id = EXCLUDED.basket_id, updated_at = now()
+        WHERE public.order_item_picking_tasks.status <> 'picked'
+      $task$
+      USING v_item.id, v_order.vendor_id, v_item.quantity, v_basket_id;
+    ELSE
+      INSERT INTO public.order_item_picking_tasks (
+        order_item_id, vendor_id, worker_id, quantity, status, assigned_at, updated_at
+      )
+      VALUES (
+        v_item.id, v_order.vendor_id, NULL, v_item.quantity, 'assigned', now(), now()
+      )
+      ON CONFLICT (order_item_id)
+      DO UPDATE SET quantity = EXCLUDED.quantity, updated_at = now()
+      WHERE public.order_item_picking_tasks.status <> 'picked';
+    END IF;
   END LOOP;
 END;
 $$;
