@@ -88,3 +88,33 @@ button:focus-visible { outline: 2px solid #059669; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   .picker-app-shell main > section { animation: none; }
 }
+
+
+/* Consistent tactile feedback for interactive controls */
+.picker-action-button {
+  transition: transform 150ms ease, box-shadow 180ms ease, background-color 160ms ease,
+    border-color 160ms ease, color 160ms ease;
+}
+.picker-action-button:active {
+  transform: scale(0.975);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+}
+.picker-action-button:focus-visible {
+  outline: 2px solid #059669;
+  outline-offset: 3px;
+}
+.bottom-navigation button:active {
+  transform: translateY(1px) scale(0.96);
+}
+.picker-app-shell main > section > div,
+.picker-app-shell main > section > article {
+  animation: picker-content-in 220ms ease-out both;
+}
+.picker-app-shell main > section > div:nth-child(2) { animation-delay: 25ms; }
+.picker-app-shell main > section > div:nth-child(3) { animation-delay: 45ms; }
+@media (prefers-reduced-motion: reduce) {
+  .picker-action-button,
+  .bottom-navigation button { transition: none !important; }
+  .picker-action-button:active,
+  .bottom-navigation button:active { transform: none; }
+}
