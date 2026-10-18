@@ -7,6 +7,8 @@ alter table public.picker_profiles
 
 -- Generate the public Picker ID before the Auth user is committed.
 -- This lets the normal Supabase signUp() response include the Picker ID.
+create sequence if not exists public.picker_login_id_seq start with 1000;
+
 create or replace function public.assign_picker_login_id()
 returns trigger
 language plpgsql
@@ -16,7 +18,7 @@ as $$
 declare
   v_role text;
   v_picker_id text;
-  v_exists boolean;
+  v_sequence_value bigint;
 begin
   v_role := new.raw_user_meta_data ->> 'picker_role';
 
@@ -24,25 +26,23 @@ begin
     return new;
   end if;
 
-  for i in 1..50 loop
-    v_picker_id := 'Rpicker-' || lpad((floor(random() * 10000))::int::text, 4, '0');
+  -- Sequential PC-1000, PC-1001, ... IDs for new accounts only.
+  -- Existing Picker IDs are never changed.
+  loop
+    v_sequence_value := nextval('public.picker_login_id_seq');
 
-    select exists(
+    if v_sequence_value > 9999 then
+      raise exception 'Picker ID sequence exhausted the four-digit range';
+    end if;
+
+    v_picker_id := 'PC-' || lpad(v_sequence_value::text, 4, '0');
+
+    exit when not exists (
       select 1
       from public.picker_profiles
       where picker_login_id = v_picker_id
-    ) into v_exists;
-
-    if not v_exists then
-      exit;
-    end if;
-
-    v_picker_id := null;
+    );
   end loop;
-
-  if v_picker_id is null then
-    raise exception 'Could not generate a unique Picker ID';
-  end if;
 
   new.raw_user_meta_data :=
     coalesce(new.raw_user_meta_data, '{}'::jsonb)
@@ -58,7 +58,6 @@ create trigger before_picker_auth_user_created
   before insert on auth.users
   for each row
   execute function public.assign_picker_login_id();
-
 -- Create the normal public Picker record after Supabase Auth creates the user.
 create or replace function public.create_picker_profile_from_auth()
 returns trigger
