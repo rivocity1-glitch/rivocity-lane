@@ -457,7 +457,16 @@ export default function App() {
             <div className="truncate text-xl font-black tracking-tight">RivoCity <span className="text-emerald-600">Picker</span></div>
             <div className="text-[10px] font-bold tracking-widest text-slate-400">PICKING WORKSPACE</div>
           </div>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700"><UserRound size={19} /></div>
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            className="touch-target flex shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+            aria-label="Log out"
+            title="Log out"
+          >
+            <LogOut size={17} />
+            <span>Logout</span>
+          </button>
         </div>
       </header>
       <main className="mx-auto w-full max-w-xl px-3 py-4 pb-28 sm:px-4 sm:py-5">
