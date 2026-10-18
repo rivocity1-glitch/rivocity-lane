@@ -177,14 +177,7 @@ BEGIN
     VALUES (
       v_item.id,
       v_order.vendor_id,
-      (
-        SELECT vw.id
-        FROM public.vendor_workers vw
-        WHERE vw.vendor_id = v_order.vendor_id
-          AND vw.status = 'active'
-        ORDER BY vw.created_at ASC
-        LIMIT 1
-      ),
+      NULL,
       v_item.quantity,
       'assigned',
       v_basket_id,
@@ -195,7 +188,8 @@ BEGIN
     DO UPDATE SET
       quantity = EXCLUDED.quantity,
       basket_id = EXCLUDED.basket_id,
-      updated_at = now();
+      updated_at = now()
+    WHERE public.order_item_picking_tasks.status <> 'picked';
   END LOOP;
 END;
 $$;
