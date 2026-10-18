@@ -33,8 +33,10 @@ export default function App() {
     if (showLoading) setRefreshing(true);
     setError(null);
     try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (authError) throw authError;
+      // A missing session is the normal signed-out state, not a load error.
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      const user = session?.user ?? null;
       if (!user) {
         setProfile(null); setWorker(null); setOrders([]); setTasks([]); setHistoryTasks([]);
         setLaneName(null); setRegistrationDetails(emptyRegistrationDetails); setLoading(false);
