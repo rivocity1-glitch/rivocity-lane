@@ -17,6 +17,16 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
 
+let pendingPickerInstallPrompt: BeforeInstallPromptEvent | null = null;
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    pendingPickerInstallPrompt = event as BeforeInstallPromptEvent;
+    window.dispatchEvent(new Event("rivocity:installprompt"));
+  });
+}
+
+
 function isAndroidDevice() {
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
   return /android/i.test(nav.userAgentData?.platform || navigator.userAgent);
@@ -28,7 +38,7 @@ function isStandaloneDisplay() {
 }
 
 function InstallAppCard() {
-  const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(() => pendingPickerInstallPrompt);
   const [installed, setInstalled] = useState(isStandaloneDisplay);
   const [android, setAndroid] = useState(isAndroidDevice);
   const [showHelp, setShowHelp] = useState(false);
@@ -40,15 +50,19 @@ function InstallAppCard() {
 
     const onBeforeInstall = (event: Event) => {
       event.preventDefault();
-      setInstallEvent(event as BeforeInstallPromptEvent);
+      pendingPickerInstallPrompt = event as BeforeInstallPromptEvent;
+      setInstallEvent(pendingPickerInstallPrompt);
     };
+    const onInstallPromptAvailable = () => setInstallEvent(pendingPickerInstallPrompt);
     const onInstalled = () => {
       setInstalled(true);
       setInstallEvent(null);
+      pendingPickerInstallPrompt = null;
       setShowHelp(false);
     };
 
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
+    window.addEventListener("rivocity:installprompt", onInstallPromptAvailable);
     window.addEventListener("appinstalled", onInstalled);
     displayMode.addEventListener?.("change", refreshInstalled);
     refreshPlatform();
@@ -56,6 +70,7 @@ function InstallAppCard() {
 
     return () => {
       window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+      window.removeEventListener("rivocity:installprompt", onInstallPromptAvailable);
       window.removeEventListener("appinstalled", onInstalled);
       displayMode.removeEventListener?.("change", refreshInstalled);
     };
@@ -71,6 +86,7 @@ function InstallAppCard() {
     await installEvent.prompt();
     const choice = await installEvent.userChoice;
     setInstallEvent(null);
+    pendingPickerInstallPrompt = null;
     if (choice.outcome === "accepted") setShowHelp(false);
     else setShowHelp(true);
   };
@@ -429,7 +445,7 @@ export default function App() {
   }
 
   if (loading) return <div className="app-viewport flex items-center justify-center px-4 text-center text-sm font-bold text-slate-500">Loading RivoCity Picker…</div>;
-  if (!profile) return <div className="app-viewport flex flex-col items-center justify-center bg-slate-50 px-3 py-6 sm:px-4"><InstallAppCard /><RegisterOrLogin loginId={loginId} email={email} password={password} setLoginId={setLoginId} setEmail={setEmail} setPassword={setPassword} onSignIn={signIn} signingIn={signingIn} error={error} /></div>;
+  if (!profile) return <RegisterOrLogin loginId={loginId} email={email} password={password} setLoginId={setLoginId} setEmail={setEmail} setPassword={setPassword} onSignIn={signIn} signingIn={signingIn} error={error} />;
 
   const applicationPending = profile.applicationStatus !== "approved";
   return (
@@ -552,7 +568,8 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
     }, () => setLocalError("Location permission was not granted."), { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
   };
 
-  return <div className="app-viewport flex items-center justify-center bg-slate-50 px-3 py-6 sm:px-4">
+  return <div className="app-viewport flex flex-col items-center justify-center bg-slate-50 px-3 py-6 sm:px-4">
+    <InstallAppCard />
     <form onSubmit={mode === "login" ? onSignIn : register} className="my-auto w-full max-w-md rounded-2xl border bg-white p-4 shadow-sm sm:p-6">
       <div className="text-2xl font-black">RivoCity <span className="text-emerald-600">Picker</span></div>
       <p className="mt-1 text-sm text-slate-500">{mode === "login" ? "Worker sign in" : "Register as a Picker"}</p>
