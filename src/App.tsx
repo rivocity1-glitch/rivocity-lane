@@ -98,6 +98,13 @@ export default function App() {
       if (workerError) throw workerError;
       if (!workerRow) {
         setWorker(null); setOrders([]); setTasks([]); setHistoryTasks([]); setLaneName(null);
+        if (p.application_status === "approved") {
+          setError(
+            p.registration_source === "vendor" && p.created_by_vendor_id
+              ? "Your creating vendor has deactivated this Picker account. Ask the vendor to reactivate it."
+              : "This Picker account is not assigned to an active vendor yet. Contact RivoCity support."
+          );
+        }
         setLoading(false);
         return;
       }
