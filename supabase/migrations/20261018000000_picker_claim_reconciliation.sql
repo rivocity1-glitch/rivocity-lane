@@ -155,7 +155,6 @@ BEGIN
   WHERE p.auth_user_id = NEW.auth_user_id;
 
   IF FOUND
-     AND v_registration_source = 'vendor'
      AND v_created_by_vendor_id IS NOT NULL
      AND NEW.vendor_id IS DISTINCT FROM v_created_by_vendor_id
   THEN
@@ -217,7 +216,7 @@ BEGIN
   IF v_picker.id IS NULL THEN
     RAISE EXCEPTION 'Picker profile not found';
   END IF;
-  IF v_picker.registration_source <> 'vendor'
+  IF v_picker.registration_source IS DISTINCT FROM 'vendor'
      OR v_picker.created_by_vendor_id IS DISTINCT FROM v_vendor_id
   THEN
     RAISE EXCEPTION 'This Picker was not created by your vendor account';
@@ -273,7 +272,7 @@ BEGIN
   IF v_picker.id IS NULL THEN
     RAISE EXCEPTION 'Picker profile not found';
   END IF;
-  IF v_picker.registration_source <> 'vendor'
+  IF v_picker.registration_source IS DISTINCT FROM 'vendor'
      OR v_picker.created_by_vendor_id IS NULL
   THEN
     RAISE EXCEPTION 'This Picker uses the independent registration flow';
@@ -378,7 +377,7 @@ BEGIN
     SELECT 1
     FROM public.picker_profiles p
     WHERE p.auth_user_id = v_worker.auth_user_id
-      AND p.registration_source = 'vendor'
+      AND p.created_by_vendor_id IS NOT NULL
       AND p.created_by_vendor_id IS DISTINCT FROM v_order.vendor_id
   ) THEN
     RAISE EXCEPTION 'Vendor-created Picker cannot claim another vendor''s order';
@@ -745,8 +744,7 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.vendors v WHERE v.id = p_vendor_id) THEN
     RAISE EXCEPTION 'Vendor not found';
   END IF;
-  IF v_picker.registration_source = 'vendor'
-     AND v_picker.created_by_vendor_id IS NOT NULL
+  IF v_picker.created_by_vendor_id IS NOT NULL
      AND v_picker.created_by_vendor_id <> p_vendor_id
   THEN
     RAISE EXCEPTION 'Vendor-created Pickers are permanently linked to their creating vendor';
