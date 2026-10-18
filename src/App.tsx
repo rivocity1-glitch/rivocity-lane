@@ -454,19 +454,21 @@ export default function App() {
         <div className="mx-auto flex h-[4.25rem] w-full max-w-2xl items-center gap-3 px-4 sm:px-6">
           {tab !== "picks" && !applicationPending ? <button type="button" onClick={goBack} aria-label="Back to orders" className="touch-target flex shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"><ArrowLeft size={20} /></button> : null}
           <div className="min-w-0 flex-1">
-            <div className="truncate text-xl font-black tracking-tight text-slate-950">RivoCity <span className="text-emerald-600">Picker</span></div>
-            <div className="mt-0.5 text-[10px] font-bold tracking-[0.18em] text-slate-400">PICKING WORKSPACE</div>
+            <div className="truncate text-xl font-black tracking-tight text-slate-950">{assignedVendor.name || "RivoCity"} <span className="text-emerald-600">Picker</span></div>
+            <div className="mt-0.5 truncate text-[10px] font-bold tracking-[0.16em] text-slate-400">{assignedVendor.name ? "ASSIGNED VENDOR" : "PICKING WORKSPACE"}</div>
           </div>
-          <button
-            type="button"
-            onClick={() => void signOut()}
-            className="flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-700"
-            aria-label="Log out"
-            title="Log out"
-          >
-            <LogOut size={17} />
-            <span>Logout</span>
-          </button>
+          {!applicationPending ? (
+            <button
+              type="button"
+              onClick={() => setTab("profile")}
+              className="flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+              aria-label="Open profile"
+              title="Open profile"
+            >
+              <UserRound size={17} />
+              <span>Profile</span>
+            </button>
+          ) : null}
         </div>
       </header>
       <main className="mx-auto w-full max-w-2xl px-4 py-5 pb-28 sm:px-6 sm:py-7">
@@ -729,7 +731,7 @@ function Profile({ profile, assignedVendor, registrationDetails, itemsPicked, or
       <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">Orders worked</p><p className="mt-1 text-2xl font-black">{ordersWorked}</p></div>
     </div></div>
     <button type="button" onClick={onRefresh} className="touch-button flex w-full items-center justify-center gap-2 rounded-xl border bg-white px-3 font-bold"><RefreshCw size={17} className={refreshing ? "animate-spin" : ""} />Refresh profile</button>
-    <button type="button" onClick={onSignOut} className="touch-button flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-3 font-bold text-red-600"><LogOut size={17} />Sign Out</button>
+    <button type="button" onClick={onSignOut} className="touch-button flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 font-bold text-red-700 transition-colors hover:bg-red-100"><LogOut size={17} />Log out</button>
   </section>;
 }
 
