@@ -715,7 +715,7 @@ RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
 DECLARE
   v_picker record;
   v_worker record;
@@ -839,7 +839,7 @@ BEGIN
     'worker_id', v_worker.id, 'request_id', v_request_id, 'lane_id', p_lane_id
   );
 END;
-$;
+$$;
 
 REVOKE ALL ON FUNCTION public.admin_assign_picker_helper(uuid, uuid, uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.admin_assign_picker_helper(uuid, uuid, uuid, uuid) TO authenticated;
