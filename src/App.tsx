@@ -418,7 +418,7 @@ export default function App() {
     await load();
   }
 
-  const normalizedBarcode = (value: string) => value.trim().replace(/\\s+/g, "");
+  const normalizedBarcode = (value: string) => value.trim().replace(/\s+/g, "");
 
   async function handleBarcodeScanned(rawValue: string) {
     if (!worker) { setScanFeedback("Your Picker account is not active."); return; }
