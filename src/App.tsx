@@ -630,7 +630,7 @@ function BarcodeScannerPanel({ open, feedback, onOpen, onClose, onScan }: {
     </div>
     {cameraError ? <p role="status" className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">{cameraError}</p> : null}
     <form onSubmit={event => { event.preventDefault(); if (manualCode.trim()) { onScan(manualCode.trim()); setManualCode(""); } }} className="mt-3 flex gap-2">
-      <input value={manualCode} onChange={event => setManualCode(event.target.value)} inputMode="numeric" autoComplete="off" placeholder="Or type barcode / SKU" aria-label="Barcode or SKU" className="min-w-0 flex-1 rounded-xl border px-3 py-3 text-base"/>
+      <input value={manualCode} onChange={event => setManualCode(event.target.value)} inputMode="text" autoComplete="off" placeholder="Or type barcode / SKU" aria-label="Barcode or SKU" className="min-w-0 flex-1 rounded-xl border px-3 py-3 text-base"/>
       <button type="submit" className="rounded-xl bg-slate-900 px-4 py-3 font-bold text-white"><Search size={18}/></button>
     </form>
     <p className="mt-2 text-xs text-slate-500">A match highlights the task. You must still tap Mark Picked to confirm the item.</p>
