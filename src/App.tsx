@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft, Check, ChevronRight, Clock, Package, UserRound, History,
   LogIn, RefreshCw, MapPin, LogOut, Mail, Phone, MapPinned, Fingerprint, CalendarDays,
+  Camera, X, ScanLine, Search, CheckCircle2, AlertTriangle,
 } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import { SessionWorker, Task, PickerProfile } from "./types";
@@ -144,6 +145,8 @@ export default function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signingIn, setSigningIn] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState<string | null>(null);
 
   const load = useCallback(async (showLoading = false) => {
     if (showLoading) setRefreshing(true);
@@ -415,6 +418,65 @@ export default function App() {
     await load();
   }
 
+  const normalizedBarcode = (value: string) => value.trim().replace(/\\s+/g, "");
+
+  async function handleBarcodeScanned(rawValue: string) {
+    if (!worker) { setScanFeedback("Your Picker account is not active."); return; }
+    const barcode = normalizedBarcode(rawValue);
+    if (!barcode) return;
+    setScanFeedback("Checking this barcode against the current order…");
+
+    // Only inspect tasks on the order already claimed by this Picker.
+    const claimedOrder = orders.find(order => order.claimedWorkerId === worker.id);
+    if (!claimedOrder) {
+      setScanFeedback("Claim an order first. Scanning never changes another order or vendor inventory.");
+      return;
+    }
+
+    const candidates = claimedOrder.tasks.filter(task =>
+      task.status !== "picked" && task.productId
+    );
+    if (!candidates.length) {
+      setScanFeedback("There are no remaining items to scan in your current order.");
+      return;
+    }
+
+    // Fetch only the product identifiers assigned to this worker's claimed order.
+    const ids = Array.from(new Set(candidates.map(task => task.productId)));
+    const { data: rows, error: lookupError } = await supabase
+      .from("products")
+      .select("id,barcode,sku,name")
+      .in("id", ids);
+    if (lookupError) {
+      setScanFeedback("Could not verify the barcode against the order. Check your connection and try again.");
+      return;
+    }
+
+    const matches = (rows || []).filter((row: any) => {
+      const expected = [row.barcode, row.sku].filter(Boolean).map((item: string) => normalizedBarcode(item));
+      return expected.includes(barcode);
+    });
+    if (matches.length !== 1) {
+      setScanFeedback(matches.length > 1
+        ? "This barcode matches more than one product in the order. Ask the vendor to fix duplicate barcode/SKU data."
+        : "No remaining product in this order matches that barcode. Check the item and try again.");
+      return;
+    }
+
+    const matchedProductId = matches[0].id;
+    const matchingTask = candidates.find(task => task.productId === matchedProductId);
+    if (!matchingTask) {
+      setScanFeedback("The product matched, but it is not a remaining task in this order.");
+      return;
+    }
+
+    // Barcode verification confirms the physical item, but never silently marks
+    // an item picked. The Picker must confirm the task through the existing RPC.
+    setScanFeedback("Barcode matched: " + matchingTask.productName + ". Confirm the item below, then tap Mark Picked.");
+    setScannerOpen(false);
+    document.getElementById("picker-task-" + matchingTask.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   async function setAvailability(next: "available" | "offline") {
     if (!profile) return;
     setError(null);
@@ -474,7 +536,7 @@ export default function App() {
       <main className="mx-auto w-full max-w-2xl px-4 py-5 pb-36 sm:px-6 sm:py-7 sm:pb-36">
         {error ? <div role="alert" className="picker-action-button mb-4 break-words rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
         {applicationPending ? <ApplicationState profile={profile} /> : <>
-          {tab === "picks" ? <Picks worker={worker} availableOrders={availableOrders} myOrders={myOrders} laneName={laneName} onClaim={claimOrder} onPick={markPicked} /> : null}
+          {tab === "picks" ? <Picks worker={worker} availableOrders={availableOrders} myOrders={myOrders} laneName={laneName} onClaim={claimOrder} onPick={markPicked} scannerOpen={scannerOpen} scanFeedback={scanFeedback} onOpenScanner={() => { setScanFeedback(null); setScannerOpen(true); }} onCloseScanner={() => setScannerOpen(false)} onBarcodeScanned={(value) => void handleBarcodeScanned(value)} /> : null}
           {tab === "history" ? <HistoryView tasks={historyTasks} completedCount={completedCount} refreshing={refreshing} onRefresh={() => void load(true)} /> : null}
           {tab === "profile" ? <Profile profile={profile} assignedVendor={assignedVendor} registrationDetails={registrationDetails} itemsPicked={completedCount} ordersWorked={ordersWorked} onAvailability={setAvailability} onRefresh={() => void load(true)} onSignOut={signOut} refreshing={refreshing} /> : null}
         </>}
@@ -490,15 +552,103 @@ export default function App() {
   );
 }
 
-function Picks({ worker, availableOrders, myOrders, laneName, onClaim, onPick }: {
+
+
+function BarcodeScannerPanel({ open, feedback, onOpen, onClose, onScan }: {
+  open: boolean; feedback: string | null; onOpen: () => void; onClose: () => void; onScan: (value: string) => void;
+}) {
+  const onScanRef = useRef(onScan);
+  useEffect(() => { onScanRef.current = onScan; }, [onScan]);
+  const [manualCode, setManualCode] = useState("");
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraActive, setCameraActive] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    let stream: MediaStream | null = null;
+    let intervalId: number | null = null;
+    let stopped = false;
+    let detector: any = null;
+    const video = document.getElementById("picker-barcode-video") as HTMLVideoElement | null;
+    setCameraError(null);
+    setCameraActive(false);
+
+    const start = async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setCameraError("Camera access needs HTTPS or localhost. You can still enter the barcode manually.");
+        return;
+      }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+        if (stopped) { stream.getTracks().forEach(track => track.stop()); return; }
+        if (video) { video.srcObject = stream; await video.play(); }
+        setCameraActive(true);
+        const BarcodeDetectorConstructor = (window as any).BarcodeDetector;
+        if (!BarcodeDetectorConstructor) {
+          setCameraError("This browser does not support native barcode detection. Enter the digits below or use a supported mobile browser.");
+          return;
+        }
+        detector = new BarcodeDetectorConstructor({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code"] });
+        intervalId = window.setInterval(async () => {
+          if (stopped || !video || video.readyState < 2) return;
+          try {
+            const detected = await detector.detect(video);
+            if (detected?.length && detected[0].rawValue) {
+              const value = String(detected[0].rawValue);
+              stopped = true;
+              if (intervalId !== null) window.clearInterval(intervalId);
+              stream?.getTracks().forEach(track => track.stop());
+              onScanRef.current(value);
+            }
+          } catch (error) {
+            console.debug("Barcode detection attempt failed:", error);
+          }
+        }, 350);
+      } catch {
+        setCameraError("Camera permission was denied or unavailable. Allow camera access, or enter the barcode manually.");
+      }
+    };
+    void start();
+    return () => {
+      stopped = true;
+      if (intervalId !== null) window.clearInterval(intervalId);
+      stream?.getTracks().forEach(track => track.stop());
+    };
+  }, [open]);
+
+  if (!open) return <section className="picker-action-button rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+    <div className="flex items-start gap-3"><div className="rounded-xl bg-emerald-600 p-2 text-white"><ScanLine size={20}/></div><div className="min-w-0 flex-1"><h2 className="font-black text-slate-900">Scan items as you pick</h2><p className="mt-1 text-sm text-slate-600">Use your phone camera to verify a product against your current order.</p></div></div>
+    <button type="button" onClick={onOpen} className="picker-action-button touch-button mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 font-black text-white"><Camera size={18}/>Open barcode scanner</button>
+    {feedback ? <p role="status" className="mt-3 rounded-xl bg-white p-3 text-sm text-slate-700">{feedback}</p> : null}
+  </section>;
+
+  return <section className="picker-action-button rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="flex items-center justify-between gap-3"><div><h2 className="font-black">Barcode verification</h2><p className="mt-1 text-xs text-slate-500">Scan only items assigned to your current order.</p></div><button type="button" aria-label="Close scanner" onClick={onClose} className="touch-target rounded-lg border p-2"><X size={18}/></button></div>
+    <div className="mt-3 overflow-hidden rounded-xl bg-slate-950">
+      <video id="picker-barcode-video" autoPlay muted playsInline className="aspect-video w-full object-cover"/>
+      {!cameraActive ? <div className="p-3 text-center text-xs text-slate-300"><Camera className="mx-auto mb-2" size={24}/>Starting camera…</div> : null}
+    </div>
+    {cameraError ? <p role="status" className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">{cameraError}</p> : null}
+    <form onSubmit={event => { event.preventDefault(); if (manualCode.trim()) { onScan(manualCode.trim()); setManualCode(""); } }} className="mt-3 flex gap-2">
+      <input value={manualCode} onChange={event => setManualCode(event.target.value)} inputMode="numeric" autoComplete="off" placeholder="Or type barcode / SKU" aria-label="Barcode or SKU" className="min-w-0 flex-1 rounded-xl border px-3 py-3 text-base"/>
+      <button type="submit" className="rounded-xl bg-slate-900 px-4 py-3 font-bold text-white"><Search size={18}/></button>
+    </form>
+    <p className="mt-2 text-xs text-slate-500">A match highlights the task. You must still tap Mark Picked to confirm the item.</p>
+    {feedback ? <p role="status" className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-900">{feedback}</p> : null}
+  </section>;
+}
+
+function Picks({ worker, availableOrders, myOrders, laneName, onClaim, onPick, scannerOpen, scanFeedback, onOpenScanner, onCloseScanner, onBarcodeScanned }: {
   worker: SessionWorker | null; availableOrders: PickerOrder[]; myOrders: PickerOrder[]; laneName: string | null;
   onClaim: (id: string) => void; onPick: (id: string) => void;
+  scannerOpen: boolean; scanFeedback: string | null; onOpenScanner: () => void; onCloseScanner: () => void; onBarcodeScanned: (value: string) => void;
 }) {
   return <section className="space-y-5">
     <div><p className="text-sm text-slate-500">Order queue</p><h1 className="break-words text-2xl font-black">{worker?.name || "RivoCity Picker"}</h1>
       <p className="mt-1 text-sm text-slate-500">{myOrders.length ? "Complete your current order before taking another." : "Claim one complete order, then pick every item in it."}</p>
       {laneName ? <p className="mt-1 text-xs font-bold text-emerald-700">Usual Lane: {laneName}</p> : null}
     </div>
+    {myOrders.length > 0 ? <BarcodeScannerPanel open={scannerOpen} feedback={scanFeedback} onOpen={onOpenScanner} onClose={onCloseScanner} onScan={onBarcodeScanned} /> : <div className="rounded-2xl border border-dashed bg-white p-4 text-sm text-slate-500">Claim an order to enable barcode verification for that order.</div>}
     {myOrders.length > 0 ? <div className="space-y-4"><div className="text-xs font-black uppercase tracking-wider text-emerald-700">My current order</div>
       {myOrders.map(order => <OrderCard key={order.id} order={order} claimed onClaim={onClaim} onPick={onPick} />)}
     </div> : <div className="space-y-4"><div className="text-xs font-black uppercase tracking-wider text-slate-500">Available orders</div>
@@ -520,7 +670,7 @@ function OrderCard({ order, claimed, onClaim, onPick }: {
       <p className="mt-1 text-sm text-slate-500">{done}/{order.tasks.length} items picked</p>
     </div><div className="picker-action-button shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase">{order.status}</div></div>
     {!claimed ? <button type="button" onClick={() => onClaim(order.id)} className="picker-action-button touch-button mt-4 w-full rounded-xl bg-emerald-600 py-3.5 font-black text-white hover:bg-emerald-700">Claim This Order <ChevronRight size={18} className="ml-1 inline" /></button> :
-      <div className="mt-4 space-y-2">{order.tasks.map(task => <div key={task.id} className="picker-action-button min-w-0 rounded-xl border bg-slate-50 p-3">
+      <div className="mt-4 space-y-2">{order.tasks.map(task => <div id={"picker-task-" + task.id} key={task.id} className="picker-action-button min-w-0 rounded-xl border bg-slate-50 p-3">
         <div className="flex items-start justify-between gap-3"><div className="min-w-0 flex-1">
           <p className="break-words font-bold">{task.productName}</p><p className="mt-1 text-xs text-slate-500">Quantity: <b className="text-slate-900">{task.quantity}</b></p>
           {task.laneName || task.rackName ? <p className="mt-1 break-words text-xs font-bold text-emerald-700">Location: {task.laneName || "Store"}{task.rackName ? " → " + task.rackName : ""}</p> : <p className="mt-1 text-xs text-slate-500">No shelf location configured.</p>}
