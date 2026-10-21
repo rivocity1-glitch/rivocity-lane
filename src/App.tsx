@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, Check, ChevronRight, Clock, Package, UserRound, History,
   LogIn, RefreshCw, MapPin, LogOut, Mail, Phone, MapPinned, Fingerprint, CalendarDays,
-  Camera, X, ScanLine, Search, CheckCircle2, AlertTriangle,
+  Camera, X, ScanLine, Search,
 } from "lucide-react";
 import { supabase } from "./lib/supabase";
 import { SessionWorker, Task, PickerProfile } from "./types";
