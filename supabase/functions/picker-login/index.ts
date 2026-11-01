@@ -88,7 +88,7 @@ Deno.serve(async (request: Request) => {
       return jsonResponse({ error: "Picker ID or password is incorrect." }, 401);
     }
 
-    // Existing registrations store the four-digit PIN using this Auth password
+    // Existing registrations store their short password using this Auth password
     // convention. The email is resolved only on the server and is never returned.
     const { data, error: authError } = await authClient.auth.signInWithPassword({
       email: profile.email,
