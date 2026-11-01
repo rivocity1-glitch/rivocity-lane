@@ -141,7 +141,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loginId, setLoginId] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signingIn, setSigningIn] = useState(false);
@@ -495,34 +494,21 @@ export default function App() {
     setSigningIn(true);
     setError(null);
 
-    const pickerId = loginId.trim().toUpperCase();
-    if (!/^PC-[0-9]{4}$/.test(pickerId) || password.length < 1 || password.length > 4) {
-      setError("Enter a valid Picker ID and a password of up to 4 characters.");
+    const loginEmail = email.trim().toLowerCase();
+    if (!loginEmail || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(loginEmail) || !password) {
+      setError("Enter your email address and password.");
       setSigningIn(false);
       return;
     }
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/picker-login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY || "",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY || ""}`,
-        },
-        body: JSON.stringify({ pickerId, pin: password }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result.session?.access_token || !result.session?.refresh_token) {
-        setError(result.error || "Picker ID or PIN is incorrect.");
-        return;
+      // Use Supabase Auth directly; no Edge Function is required for email/password login.
+      let result = await supabase.auth.signInWithPassword({ email: loginEmail, password });
+      // Backward compatibility for existing Picker accounts created with the old Rivo@ + PIN format.
+      if (result.error && /^[0-9]{4}$/.test(password)) {
+        result = await supabase.auth.signInWithPassword({ email: loginEmail, password: "Rivo@" + password });
       }
-
-      const { error: sessionError } = await supabase.auth.setSession({
-        access_token: result.session.access_token,
-        refresh_token: result.session.refresh_token,
-      });
-      if (sessionError) setError(sessionError.message || "Unable to start your Picker session.");
+      if (result.error) setError(result.error.message || "Email or password is incorrect.");
     } catch (loginError: any) {
       setError(loginError?.message || "Unable to connect. Check your internet connection and try again.");
     } finally {
@@ -539,7 +525,7 @@ export default function App() {
   }
 
   if (loading) return <div className="app-viewport flex items-center justify-center px-4 text-center text-sm font-bold text-slate-500">Loading RivoCity Picker…</div>;
-  if (!profile) return <RegisterOrLogin loginId={loginId} email={email} password={password} setLoginId={setLoginId} setEmail={setEmail} setPassword={setPassword} onSignIn={signIn} signingIn={signingIn} error={error} />;
+  if (!profile) return <RegisterOrLogin email={email} password={password} setEmail={setEmail} setPassword={setPassword} onSignIn={signIn} signingIn={signingIn} error={error} />;
 
   const applicationPending = profile.applicationStatus !== "approved";
   const waitingForVendor = profile.applicationStatus === "approved" && !worker;
@@ -744,8 +730,8 @@ function OrderCard({ order, claimed, onClaim, onPick }: {
   </article>;
 }
 
-function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPassword, onSignIn, signingIn, error }: {
-  loginId: string; email: string; password: string; setLoginId: (value: string) => void; setEmail: (value: string) => void;
+function RegisterOrLogin({ email, password, setEmail, setPassword, onSignIn, signingIn, error }: {
+  email: string; password: string; setEmail: (value: string) => void;
   setPassword: (value: string) => void; onSignIn: (event: React.FormEvent) => void; signingIn: boolean; error: string | null;
 }) {
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -771,7 +757,7 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
         if (signupError.status === 422 || /already registered|user already registered/i.test(signupError.message || "")) {
           // Do not query or reveal an existing account's Picker ID from the public client.
           setMode("login");
-          setMessage("This email may already be registered. Sign in with your Picker ID and Password (maximum 4 characters), or contact support if you no longer have your ID.");
+          setMessage("This email may already be registered. Sign in using your email address and password.");
           return;
         }
         setLocalError(signupError.message); return;
@@ -802,8 +788,8 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
       <p className="mt-1 text-sm text-slate-500">{mode === "login" ? "Worker sign in" : "Register as a Picker"}</p>
       {(error || localError) ? <div role="alert" className="picker-action-button mt-4 break-words rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error || localError}</div> : null}
       {message ? <div role="status" className="picker-action-button mt-4 break-words rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</div> : null}
-      {mode === "login" ? <label className="mt-5 block text-xs font-bold text-slate-600">Picker ID
-        <input value={loginId} onChange={event => setLoginId(event.target.value)} placeholder="PC-1234" autoComplete="username" maxLength={12} className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
+      {mode === "login" ? <label className="mt-5 block text-xs font-bold text-slate-600">Email address
+        <input value={email} onChange={event => setEmail(event.target.value)} type="email" placeholder="you@example.com" autoComplete="username" required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
       </label> : <>
         <FormField label="Full name" value={name} onChange={setName} autoComplete="name" required />
         <FormField label="Mobile number" value={phone} onChange={setPhone} type="tel" autoComplete="tel" required />
@@ -817,8 +803,8 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
           <input value={email} onChange={event => setEmail(event.target.value)} type="email" autoComplete="email" required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
         </label>
       </>}
-      <label className="mt-3 block text-xs font-bold text-slate-600">4-digit PIN
-        <input value={password} maxLength={4} onChange={event => setPassword(event.target.value.slice(0, 4))} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
+      <label className="mt-3 block text-xs font-bold text-slate-600">{mode === "login" ? "Password" : "4-digit PIN"}
+        <input value={password} maxLength={mode === "login" ? 128 : 4} onChange={event => setPassword(mode === "login" ? event.target.value : event.target.value.slice(0, 4))} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
       </label>
       <button disabled={signingIn || submitting} className="picker-action-button touch-button mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 font-black text-white disabled:opacity-60">
         {mode === "login" ? <><LogIn size={18} />{signingIn ? "Signing in…" : "Sign In"}</> : submitting ? "Submitting…" : "Submit Registration"}
