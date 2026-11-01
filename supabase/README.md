@@ -41,7 +41,7 @@ supabase functions deploy picker-login
 
 The Supabase project already provides `SUPABASE_URL` and `SUPABASE_ANON_KEY` to Edge Functions. Never put the service-role key in the Vite `.env` file or frontend code.
 
-The Edge Function uses the existing Auth password convention `Rivo@<4-digit PIN>` for compatibility with already registered Picker accounts. This PIN scheme has a small search space; keep Supabase Auth rate limits enabled and plan a migration to a stronger credential / OTP flow before broad public rollout.
+The Edge Function uses the existing Auth password convention `Rivo@<password of up to 4 characters>` for compatibility with already registered Picker accounts. This PIN scheme has a small search space; keep Supabase Auth rate limits enabled and plan a migration to a stronger credential / OTP flow before broad public rollout.
 
 ### Frontend environment
 
@@ -68,7 +68,7 @@ For Android testing on the same Wi-Fi, use HTTPS or a secure tunnel for camera a
 ## Required manual tests
 
 - Register with a new email and confirm a unique Picker ID is displayed.
-- Confirm email (when email confirmation is enabled), then sign in using Picker ID and four-digit PIN.
+- Confirm email (when email confirmation is enabled), then sign in using Picker ID and short password.
 - Verify wrong IDs/PINs return the same generic error.
 - Verify pending Picker cannot access picking tools.
 - Approve and assign a Picker, then claim an order.
