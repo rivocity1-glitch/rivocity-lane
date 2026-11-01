@@ -493,8 +493,8 @@ export default function App() {
     setError(null);
 
     const pickerId = loginId.trim().toUpperCase();
-    if (!/^PC-[0-9]{4}$/.test(pickerId) || !/^[0-9]{4}$/.test(password)) {
-      setError("Enter a valid Picker ID and 4-digit PIN.");
+    if (!/^PC-[0-9]{4}$/.test(pickerId) || password.length < 1 || password.length > 4) {
+      setError("Enter a valid Picker ID and a password of up to 4 characters.");
       setSigningIn(false);
       return;
     }
@@ -720,7 +720,7 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
   const register = async (event: React.FormEvent) => {
     event.preventDefault(); setMessage(""); setLocalError("");
     if (!name.trim() || !phone.trim() || !city.trim() || !email.trim()) { setLocalError("Fill all required fields."); return; }
-    if (!/^[0-9]{4}$/.test(password)) { setLocalError("Choose a 4-digit PIN."); return; }
+    if (!/^[0-9]{4}$/.test(password)) { setLocalError("Choose a Password (maximum 4 characters)."); return; }
     if (pincode && !/^[0-9]{6}$/.test(pincode)) { setLocalError("Pincode must be exactly 6 digits."); return; }
     setSubmitting(true);
     try {
@@ -781,7 +781,7 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
         </label>
       </>}
       <label className="mt-3 block text-xs font-bold text-slate-600">4-digit PIN
-        <input value={password} maxLength={4} minLength={4} pattern="[0-9]{4}" inputMode="numeric" onChange={event => setPassword(event.target.value.replace(/[^0-9]/g, "").slice(0, 4))} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
+        <input value={password} maxLength={4} onChange={event => setPassword(event.target.value.slice(0, 4))} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
       </label>
       <button disabled={signingIn || submitting} className="picker-action-button touch-button mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 font-black text-white disabled:opacity-60">
         {mode === "login" ? <><LogIn size={18} />{signingIn ? "Signing in…" : "Sign In"}</> : submitting ? "Submitting…" : "Submit Registration"}
