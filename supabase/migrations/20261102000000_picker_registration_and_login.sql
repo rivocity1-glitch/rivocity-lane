@@ -139,6 +139,50 @@ CREATE TRIGGER on_picker_auth_user_created
 -- Retire the old unauthenticated email-lookup RPC if one was created manually.
 DROP FUNCTION IF EXISTS public.get_picker_login_email(text);
 
+-- Vendor-created Picker visibility, approval and worker-link policies.
+DROP POLICY IF EXISTS "Vendors can view their created pickers" ON public.picker_profiles;
+CREATE POLICY "Vendors can view their created pickers"
+ON public.picker_profiles
+FOR SELECT TO authenticated
+USING (
+  created_by_vendor_id = (
+    SELECT v.id FROM public.vendors v
+    WHERE v.auth_user_id = (SELECT auth.uid())
+    LIMIT 1
+  )
+);
+
+DROP POLICY IF EXISTS "Vendors can approve their created pickers" ON public.picker_profiles;
+CREATE POLICY "Vendors can approve their created pickers"
+ON public.picker_profiles
+FOR UPDATE TO authenticated
+USING (
+  created_by_vendor_id = (
+    SELECT v.id FROM public.vendors v
+    WHERE v.auth_user_id = (SELECT auth.uid())
+    LIMIT 1
+  )
+)
+WITH CHECK (
+  created_by_vendor_id = (
+    SELECT v.id FROM public.vendors v
+    WHERE v.auth_user_id = (SELECT auth.uid())
+    LIMIT 1
+  )
+);
+
+DROP POLICY IF EXISTS "Vendors can create their picker workers" ON public.vendor_workers;
+CREATE POLICY "Vendors can create their picker workers"
+ON public.vendor_workers
+FOR INSERT TO authenticated
+WITH CHECK (
+  vendor_id = (
+    SELECT v.id FROM public.vendors v
+    WHERE v.auth_user_id = (SELECT auth.uid())
+    LIMIT 1
+  )
+);
+
 -- Rate-limit failed Picker-ID sign-in attempts using a hash of IP + Picker ID.
 CREATE TABLE IF NOT EXISTS public.picker_login_rate_limits (
   key_hash text PRIMARY KEY,
