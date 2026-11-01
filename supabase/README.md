@@ -78,6 +78,10 @@ For Android testing on the same Wi-Fi, use HTTPS or a secure tunnel for camera a
 - Test PWA install and camera permission on actual Android Chrome over HTTPS.
 - Test manual barcode entry on browsers without native BarcodeDetector support.
 
+## Legacy SQL files
+
+`picker_auth_trigger.sql` is retained for reference; its trigger and vendor policies are now included in the timestamped migrations. Do not run it separately after applying the migrations. `picker_operations.sql` is a legacy/optional basket-operations script and is not part of the current Picker PWA setup; do not apply it as part of this deployment without reviewing its separate schema changes.
+
 ## Scope
 
 Picker is only the worker picking interface. It is not a vendor dashboard, inventory-management tool, billing system, or customer-order app.
