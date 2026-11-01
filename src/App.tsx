@@ -757,7 +757,7 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
   const register = async (event: React.FormEvent) => {
     event.preventDefault(); setMessage(""); setLocalError("");
     if (!name.trim() || !phone.trim() || !city.trim() || !email.trim()) { setLocalError("Fill all required fields."); return; }
-    if (!/^[0-9]{4}$/.test(password)) { setLocalError("Choose a Password (maximum 4 characters)."); return; }
+    if (!/^[0-9]{4}$/.test(password)) { setLocalError("Choose a 4-digit PIN for new registrations."); return; }
     if (pincode && !/^[0-9]{6}$/.test(pincode)) { setLocalError("Pincode must be exactly 6 digits."); return; }
     setSubmitting(true);
     try {
