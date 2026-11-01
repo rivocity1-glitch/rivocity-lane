@@ -155,4 +155,71 @@ CREATE TRIGGER on_picker_auth_user_created
 -- Picker ID sign-in now resolves credentials inside the Edge Function.
 DROP FUNCTION IF EXISTS public.get_picker_login_email(text);
 
+
+-- A Picker can edit ordinary profile fields and availability, but cannot
+-- approve itself, change its Auth identity, or move itself between vendors.
+CREATE OR REPLACE FUNCTION public.guard_picker_profile_updates()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $
+DECLARE
+  v_user_vendor_id uuid;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.admin_users a
+    WHERE a.auth_user_id = (SELECT auth.uid())
+  ) THEN
+    RETURN NEW;
+  END IF;
+
+  IF (SELECT auth.uid()) = OLD.auth_user_id THEN
+    IF NEW.auth_user_id IS DISTINCT FROM OLD.auth_user_id
+       OR NEW.picker_login_id IS DISTINCT FROM OLD.picker_login_id
+       OR NEW.email IS DISTINCT FROM OLD.email
+       OR NEW.application_status IS DISTINCT FROM OLD.application_status
+       OR NEW.registration_source IS DISTINCT FROM OLD.registration_source
+       OR NEW.created_by_vendor_id IS DISTINCT FROM OLD.created_by_vendor_id
+       OR NEW.id IS DISTINCT FROM OLD.id
+    THEN
+      RAISE EXCEPTION 'Picker identity and approval fields cannot be changed by the Picker';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  SELECT v.id INTO v_user_vendor_id
+  FROM public.vendors v
+  WHERE v.auth_user_id = (SELECT auth.uid())
+  LIMIT 1;
+
+  IF v_user_vendor_id IS NOT NULL
+     AND OLD.created_by_vendor_id = v_user_vendor_id
+  THEN
+    IF NEW.auth_user_id IS DISTINCT FROM OLD.auth_user_id
+       OR NEW.picker_login_id IS DISTINCT FROM OLD.picker_login_id
+       OR NEW.email IS DISTINCT FROM OLD.email
+       OR NEW.registration_source IS DISTINCT FROM OLD.registration_source
+       OR NEW.created_by_vendor_id IS DISTINCT FROM OLD.created_by_vendor_id
+       OR NEW.id IS DISTINCT FROM OLD.id
+    THEN
+      RAISE EXCEPTION 'Vendor cannot change a Picker identity or vendor ownership';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS trg_guard_picker_profile_updates ON public.picker_profiles;
+CREATE TRIGGER trg_guard_picker_profile_updates
+  BEFORE UPDATE ON public.picker_profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.guard_picker_profile_updates();
+
 COMMIT;
