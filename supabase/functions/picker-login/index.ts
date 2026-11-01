@@ -38,8 +38,8 @@ Deno.serve(async (request: Request) => {
 
   const pickerId = typeof body.pickerId === "string" ? body.pickerId.trim().toUpperCase() : "";
   const pin = typeof body.pin === "string" ? body.pin : "";
-  if (!/^PC-[0-9]{4}$/.test(pickerId) || !/^[0-9]{4}$/.test(pin)) {
-    return jsonResponse({ error: "Enter a valid Picker ID and 4-digit PIN." }, 400);
+  if (!/^PC-[0-9]{4}$/.test(pickerId) || pin.length < 1 || pin.length > 4) {
+    return jsonResponse({ error: "Enter a valid Picker ID and a password of up to 4 characters." }, 400);
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, {
