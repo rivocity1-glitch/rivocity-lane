@@ -1,6 +1,5 @@
--- RivoCity Picker registration and secure Picker-ID sign-in
+-- RivoCity Picker registration, secure Picker-ID sign-in and profile protections.
 -- Apply after 20261019000000_sequential_picker_ids.sql.
--- This migration makes the auth/profile trigger setup reproducible from migrations.
 
 BEGIN;
 
@@ -57,13 +56,11 @@ BEGIN
 
   LOOP
     v_sequence_value := nextval('public.picker_login_id_seq');
-
     IF v_sequence_value > 9999 THEN
       RAISE EXCEPTION 'Picker ID sequence exhausted the four-digit range';
     END IF;
 
     v_picker_id := 'PC-' || lpad(v_sequence_value::text, 4, '0');
-
     EXIT WHEN NOT EXISTS (
       SELECT 1 FROM public.picker_profiles p
       WHERE p.picker_login_id = v_picker_id
@@ -106,21 +103,9 @@ BEGIN
   END IF;
 
   INSERT INTO public.picker_profiles (
-    auth_user_id,
-    picker_login_id,
-    email,
-    full_name,
-    phone,
-    city,
-    locality,
-    pincode,
-    address,
-    latitude,
-    longitude,
-    availability_status,
-    application_status,
-    registration_source,
-    created_by_vendor_id
+    auth_user_id, picker_login_id, email, full_name, phone, city, locality,
+    pincode, address, latitude, longitude, availability_status,
+    application_status, registration_source, created_by_vendor_id
   )
   VALUES (
     NEW.id,
@@ -151,12 +136,10 @@ CREATE TRIGGER on_picker_auth_user_created
   FOR EACH ROW
   EXECUTE FUNCTION public.create_picker_profile_from_auth();
 
--- Retire the old unauthenticated email-lookup RPC if it was created manually.
--- Picker ID sign-in now resolves credentials inside the Edge Function.
+-- Retire the old unauthenticated email-lookup RPC if one was created manually.
 DROP FUNCTION IF EXISTS public.get_picker_login_email(text);
 
-
--- Rate-limit failed Picker ID sign-in attempts without storing raw IP addresses.
+-- Rate-limit failed Picker-ID sign-in attempts using a hash of IP + Picker ID.
 CREATE TABLE IF NOT EXISTS public.picker_login_rate_limits (
   key_hash text PRIMARY KEY,
   window_started_at timestamptz NOT NULL DEFAULT now(),
@@ -177,7 +160,7 @@ RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
 DECLARE
   v_blocked_until timestamptz;
   v_attempts integer;
@@ -186,74 +169,7 @@ BEGIN
     RAISE EXCEPTION 'Service role required';
   END IF;
 
-  IF p_key_hash IS NULL OR p_key_hash !~ '^[a-f0-9]{64} and availability, but cannot
--- approve itself, change its Auth identity, or move itself between vendors.
-CREATE OR REPLACE FUNCTION public.guard_picker_profile_updates()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = ''
-AS $
-DECLARE
-  v_user_vendor_id uuid;
-BEGIN
-  IF (SELECT auth.uid()) IS NULL THEN
-    RETURN NEW;
-  END IF;
-
-  IF EXISTS (
-    SELECT 1 FROM public.admin_users a
-    WHERE a.auth_user_id = (SELECT auth.uid())
-  ) THEN
-    RETURN NEW;
-  END IF;
-
-  IF (SELECT auth.uid()) = OLD.auth_user_id THEN
-    IF NEW.auth_user_id IS DISTINCT FROM OLD.auth_user_id
-       OR NEW.picker_login_id IS DISTINCT FROM OLD.picker_login_id
-       OR NEW.email IS DISTINCT FROM OLD.email
-       OR NEW.application_status IS DISTINCT FROM OLD.application_status
-       OR NEW.registration_source IS DISTINCT FROM OLD.registration_source
-       OR NEW.created_by_vendor_id IS DISTINCT FROM OLD.created_by_vendor_id
-       OR NEW.id IS DISTINCT FROM OLD.id
-    THEN
-      RAISE EXCEPTION 'Picker identity and approval fields cannot be changed by the Picker';
-    END IF;
-    RETURN NEW;
-  END IF;
-
-  SELECT v.id INTO v_user_vendor_id
-  FROM public.vendors v
-  WHERE v.auth_user_id = (SELECT auth.uid())
-  LIMIT 1;
-
-  IF v_user_vendor_id IS NOT NULL
-     AND OLD.created_by_vendor_id = v_user_vendor_id
-  THEN
-    IF NEW.auth_user_id IS DISTINCT FROM OLD.auth_user_id
-       OR NEW.picker_login_id IS DISTINCT FROM OLD.picker_login_id
-       OR NEW.email IS DISTINCT FROM OLD.email
-       OR NEW.registration_source IS DISTINCT FROM OLD.registration_source
-       OR NEW.created_by_vendor_id IS DISTINCT FROM OLD.created_by_vendor_id
-       OR NEW.id IS DISTINCT FROM OLD.id
-    THEN
-      RAISE EXCEPTION 'Vendor cannot change a Picker identity or vendor ownership';
-    END IF;
-    RETURN NEW;
-  END IF;
-
-  RETURN NEW;
-END;
-$;
-
-DROP TRIGGER IF EXISTS trg_guard_picker_profile_updates ON public.picker_profiles;
-CREATE TRIGGER trg_guard_picker_profile_updates
-  BEFORE UPDATE ON public.picker_profiles
-  FOR EACH ROW
-  EXECUTE FUNCTION public.guard_picker_profile_updates();
-
-COMMIT;
- THEN
+  IF p_key_hash IS NULL OR p_key_hash !~ '^[a-f0-9]{64}$' THEN
     RAISE EXCEPTION 'Invalid rate-limit key';
   END IF;
 
@@ -263,8 +179,7 @@ COMMIT;
   END IF;
 
   IF NOT p_failed THEN
-    SELECT r.blocked_until
-      INTO v_blocked_until
+    SELECT r.blocked_until INTO v_blocked_until
     FROM public.picker_login_rate_limits r
     WHERE r.key_hash = p_key_hash;
     RETURN v_blocked_until IS NULL OR v_blocked_until <= now();
@@ -288,24 +203,22 @@ COMMIT;
       WHEN public.picker_login_rate_limits.failed_attempts + 1 >= 5 THEN now() + interval '15 minutes'
       ELSE NULL
     END
-  RETURNING failed_attempts, blocked_until
-    INTO v_attempts, v_blocked_until;
+  RETURNING failed_attempts, blocked_until INTO v_attempts, v_blocked_until;
 
   RETURN v_blocked_until IS NULL OR v_blocked_until <= now();
 END;
-$;
+$$;
 
 REVOKE ALL ON FUNCTION public.consume_picker_login_attempt(text, boolean, boolean) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.consume_picker_login_attempt(text, boolean, boolean) TO service_role;
 
--- A Picker can edit ordinary profile fields and availability, but cannot
--- approve itself, change its Auth identity, or move itself between vendors.
+-- Prevent a Picker from self-approving or changing the Auth/vendor identity.
 CREATE OR REPLACE FUNCTION public.guard_picker_profile_updates()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $
+AS $$
 DECLARE
   v_user_vendor_id uuid;
 BEGIN
@@ -356,7 +269,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$;
+$$;
 
 DROP TRIGGER IF EXISTS trg_guard_picker_profile_updates ON public.picker_profiles;
 CREATE TRIGGER trg_guard_picker_profile_updates
