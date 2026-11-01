@@ -139,6 +139,10 @@ CREATE TRIGGER on_picker_auth_user_created
 -- Retire the old unauthenticated email-lookup RPC if one was created manually.
 DROP FUNCTION IF EXISTS public.get_picker_login_email(text);
 
+-- Auth-triggered profile creation is the only allowed Picker profile insert path.
+-- The old self-insert policy let clients forge approval/vendor/Picker-ID fields.
+DROP POLICY IF EXISTS "Picker can create own profile" ON public.picker_profiles;
+
 -- Vendor-created Picker visibility, approval and worker-link policies.
 DROP POLICY IF EXISTS "Vendors can view their created pickers" ON public.picker_profiles;
 CREATE POLICY "Vendors can view their created pickers"
@@ -180,6 +184,16 @@ WITH CHECK (
     SELECT v.id FROM public.vendors v
     WHERE v.auth_user_id = (SELECT auth.uid())
     LIMIT 1
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM public.picker_profiles p
+    WHERE p.auth_user_id = vendor_workers.auth_user_id
+      AND p.application_status = 'approved'
+      AND (
+        p.created_by_vendor_id IS NULL
+        OR p.created_by_vendor_id = vendor_workers.vendor_id
+      )
   )
 );
 
