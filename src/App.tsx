@@ -601,10 +601,18 @@ function BarcodeScannerPanel({ open, feedback, onOpen, onClose, onScan }: {
     let stream: MediaStream | null = null;
     let intervalId: number | null = null;
     let stopped = false;
+    let detecting = false;
     let detector: any = null;
     const video = document.getElementById("picker-barcode-video") as HTMLVideoElement | null;
     setCameraError(null);
     setCameraActive(false);
+
+    const stopCamera = () => {
+      stream?.getTracks().forEach(track => track.stop());
+      if (video) video.srcObject = null;
+      stream = null;
+      setCameraActive(false);
+    };
 
     const start = async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -612,32 +620,55 @@ function BarcodeScannerPanel({ open, feedback, onOpen, onClose, onScan }: {
         return;
       }
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
-        if (stopped) { stream.getTracks().forEach(track => track.stop()); return; }
-        if (video) { video.srcObject = stream; await video.play(); }
-        setCameraActive(true);
         const BarcodeDetectorConstructor = (window as any).BarcodeDetector;
         if (!BarcodeDetectorConstructor) {
-          setCameraError("This browser does not support native barcode detection. Enter the digits below or use a supported mobile browser.");
+          setCameraError("This browser does not support native barcode detection. Enter the barcode or SKU manually.");
           return;
         }
-        detector = new BarcodeDetectorConstructor({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code"] });
+
+        const requestedFormats = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code"];
+        const supportedFormats = typeof BarcodeDetectorConstructor.getSupportedFormats === "function"
+          ? await BarcodeDetectorConstructor.getSupportedFormats()
+          : requestedFormats;
+        const formats = requestedFormats.filter(format => supportedFormats.includes(format));
+        if (!formats.length) {
+          setCameraError("This browser cannot scan the supported barcode formats. Enter the barcode or SKU manually.");
+          return;
+        }
+
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+        if (stopped) { stopCamera(); return; }
+        if (!video) {
+          setCameraError("Camera preview could not be started. Enter the barcode or SKU manually.");
+          stopCamera();
+          return;
+        }
+        video.srcObject = stream;
+        await video.play();
+        if (stopped) { stopCamera(); return; }
+        setCameraActive(true);
+
+        detector = new BarcodeDetectorConstructor({ formats });
         intervalId = window.setInterval(async () => {
-          if (stopped || !video || video.readyState < 2) return;
+          if (stopped || detecting || !video || video.readyState < 2) return;
+          detecting = true;
           try {
             const detected = await detector.detect(video);
-            if (detected?.length && detected[0].rawValue) {
+            if (!stopped && detected?.length && detected[0].rawValue) {
               const value = String(detected[0].rawValue);
               stopped = true;
               if (intervalId !== null) window.clearInterval(intervalId);
-              stream?.getTracks().forEach(track => track.stop());
+              stopCamera();
               onScanRef.current(value);
             }
           } catch (error) {
             console.debug("Barcode detection attempt failed:", error);
+          } finally {
+            detecting = false;
           }
         }, 350);
       } catch {
+        stopCamera();
         setCameraError("Camera permission was denied or unavailable. Allow camera access, or enter the barcode manually.");
       }
     };
