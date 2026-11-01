@@ -156,6 +156,148 @@ CREATE TRIGGER on_picker_auth_user_created
 DROP FUNCTION IF EXISTS public.get_picker_login_email(text);
 
 
+-- Rate-limit failed Picker ID sign-in attempts without storing raw IP addresses.
+CREATE TABLE IF NOT EXISTS public.picker_login_rate_limits (
+  key_hash text PRIMARY KEY,
+  window_started_at timestamptz NOT NULL DEFAULT now(),
+  failed_attempts integer NOT NULL DEFAULT 0,
+  blocked_until timestamptz
+);
+
+ALTER TABLE public.picker_login_rate_limits ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.picker_login_rate_limits FROM PUBLIC, anon, authenticated;
+GRANT ALL ON TABLE public.picker_login_rate_limits TO service_role;
+
+CREATE OR REPLACE FUNCTION public.consume_picker_login_attempt(
+  p_key_hash text,
+  p_failed boolean DEFAULT false,
+  p_success boolean DEFAULT false
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $
+DECLARE
+  v_blocked_until timestamptz;
+  v_attempts integer;
+BEGIN
+  IF (SELECT auth.role()) <> 'service_role' THEN
+    RAISE EXCEPTION 'Service role required';
+  END IF;
+
+  IF p_key_hash IS NULL OR p_key_hash !~ '^[a-f0-9]{64} and availability, but cannot
+-- approve itself, change its Auth identity, or move itself between vendors.
+CREATE OR REPLACE FUNCTION public.guard_picker_profile_updates()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $
+DECLARE
+  v_user_vendor_id uuid;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.admin_users a
+    WHERE a.auth_user_id = (SELECT auth.uid())
+  ) THEN
+    RETURN NEW;
+  END IF;
+
+  IF (SELECT auth.uid()) = OLD.auth_user_id THEN
+    IF NEW.auth_user_id IS DISTINCT FROM OLD.auth_user_id
+       OR NEW.picker_login_id IS DISTINCT FROM OLD.picker_login_id
+       OR NEW.email IS DISTINCT FROM OLD.email
+       OR NEW.application_status IS DISTINCT FROM OLD.application_status
+       OR NEW.registration_source IS DISTINCT FROM OLD.registration_source
+       OR NEW.created_by_vendor_id IS DISTINCT FROM OLD.created_by_vendor_id
+       OR NEW.id IS DISTINCT FROM OLD.id
+    THEN
+      RAISE EXCEPTION 'Picker identity and approval fields cannot be changed by the Picker';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  SELECT v.id INTO v_user_vendor_id
+  FROM public.vendors v
+  WHERE v.auth_user_id = (SELECT auth.uid())
+  LIMIT 1;
+
+  IF v_user_vendor_id IS NOT NULL
+     AND OLD.created_by_vendor_id = v_user_vendor_id
+  THEN
+    IF NEW.auth_user_id IS DISTINCT FROM OLD.auth_user_id
+       OR NEW.picker_login_id IS DISTINCT FROM OLD.picker_login_id
+       OR NEW.email IS DISTINCT FROM OLD.email
+       OR NEW.registration_source IS DISTINCT FROM OLD.registration_source
+       OR NEW.created_by_vendor_id IS DISTINCT FROM OLD.created_by_vendor_id
+       OR NEW.id IS DISTINCT FROM OLD.id
+    THEN
+      RAISE EXCEPTION 'Vendor cannot change a Picker identity or vendor ownership';
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  RETURN NEW;
+END;
+$;
+
+DROP TRIGGER IF EXISTS trg_guard_picker_profile_updates ON public.picker_profiles;
+CREATE TRIGGER trg_guard_picker_profile_updates
+  BEFORE UPDATE ON public.picker_profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.guard_picker_profile_updates();
+
+COMMIT;
+ THEN
+    RAISE EXCEPTION 'Invalid rate-limit key';
+  END IF;
+
+  IF p_success THEN
+    DELETE FROM public.picker_login_rate_limits WHERE key_hash = p_key_hash;
+    RETURN true;
+  END IF;
+
+  IF NOT p_failed THEN
+    SELECT r.blocked_until
+      INTO v_blocked_until
+    FROM public.picker_login_rate_limits r
+    WHERE r.key_hash = p_key_hash;
+    RETURN v_blocked_until IS NULL OR v_blocked_until <= now();
+  END IF;
+
+  INSERT INTO public.picker_login_rate_limits(key_hash, window_started_at, failed_attempts, blocked_until)
+  VALUES (p_key_hash, now(), 1, NULL)
+  ON CONFLICT (key_hash) DO UPDATE
+  SET
+    failed_attempts = CASE
+      WHEN public.picker_login_rate_limits.window_started_at < now() - interval '15 minutes' THEN 1
+      ELSE public.picker_login_rate_limits.failed_attempts + 1
+    END,
+    window_started_at = CASE
+      WHEN public.picker_login_rate_limits.window_started_at < now() - interval '15 minutes' THEN now()
+      ELSE public.picker_login_rate_limits.window_started_at
+    END,
+    blocked_until = CASE
+      WHEN public.picker_login_rate_limits.window_started_at < now() - interval '15 minutes' THEN NULL
+      WHEN public.picker_login_rate_limits.blocked_until > now() THEN public.picker_login_rate_limits.blocked_until
+      WHEN public.picker_login_rate_limits.failed_attempts + 1 >= 5 THEN now() + interval '15 minutes'
+      ELSE NULL
+    END
+  RETURNING failed_attempts, blocked_until
+    INTO v_attempts, v_blocked_until;
+
+  RETURN v_blocked_until IS NULL OR v_blocked_until <= now();
+END;
+$;
+
+REVOKE ALL ON FUNCTION public.consume_picker_login_attempt(text, boolean, boolean) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.consume_picker_login_attempt(text, boolean, boolean) TO service_role;
+
 -- A Picker can edit ordinary profile fields and availability, but cannot
 -- approve itself, change its Auth identity, or move itself between vendors.
 CREATE OR REPLACE FUNCTION public.guard_picker_profile_updates()
