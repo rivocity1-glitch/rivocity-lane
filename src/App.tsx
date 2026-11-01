@@ -158,7 +158,8 @@ export default function App() {
       const user = session?.user ?? null;
       if (!user) {
         setProfile(null); setWorker(null); setOrders([]); setTasks([]); setHistoryTasks([]);
-        setLaneName(null); setRegistrationDetails(emptyRegistrationDetails); setLoading(false);
+        setLaneName(null); setAssignedVendor({ name: null, area: null });
+        setRegistrationDetails(emptyRegistrationDetails); setScannerOpen(false); setScanFeedback(null); setLoading(false);
         return;
       }
 
@@ -170,7 +171,7 @@ export default function App() {
       if (!p) {
         await supabase.auth.signOut();
         setProfile(null); setWorker(null); setOrders([]); setTasks([]); setHistoryTasks([]);
-        setLaneName(null); setLoading(false);
+        setLaneName(null); setAssignedVendor({ name: null, area: null }); setLoading(false);
         setError("Your Picker profile could not be found. Please contact RivoCity support.");
         return;
       }
@@ -217,6 +218,7 @@ export default function App() {
       if (workerError) throw workerError;
       if (!workerRow) {
         setWorker(null); setOrders([]); setTasks([]); setHistoryTasks([]); setLaneName(null);
+        setAssignedVendor({ name: null, area: null });
         if (p.application_status === "approved") {
           setError(
             p.registration_source === "vendor" && p.created_by_vendor_id
@@ -346,7 +348,8 @@ export default function App() {
 
       const { data: laneAssignment, error: laneError } = await supabase
         .from("vendor_lane_picker_assignments").select("vendor_lanes(lane_name)")
-        .eq("worker_id", workerRow.id).eq("status", "active").maybeSingle();
+        .eq("worker_id", workerRow.id).eq("status", "active")
+        .order("assigned_at", { ascending: false }).limit(1).maybeSingle();
       if (laneError) console.warn("Optional lane assignment could not be loaded:", laneError);
       setLaneName((laneAssignment as any)?.vendor_lanes?.lane_name || null);
     } catch (loadError: any) {
@@ -530,13 +533,16 @@ export default function App() {
   async function signOut() {
     await supabase.auth.signOut();
     setProfile(null); setWorker(null); setOrders([]); setTasks([]); setHistoryTasks([]);
-    setLaneName(null); setRegistrationDetails(emptyRegistrationDetails); setTab("picks");
+    setLaneName(null); setAssignedVendor({ name: null, area: null });
+    setRegistrationDetails(emptyRegistrationDetails); setTab("picks");
+    setScannerOpen(false); setScanFeedback(null); setError(null);
   }
 
   if (loading) return <div className="app-viewport flex items-center justify-center px-4 text-center text-sm font-bold text-slate-500">Loading RivoCity Picker…</div>;
   if (!profile) return <RegisterOrLogin loginId={loginId} email={email} password={password} setLoginId={setLoginId} setEmail={setEmail} setPassword={setPassword} onSignIn={signIn} signingIn={signingIn} error={error} />;
 
   const applicationPending = profile.applicationStatus !== "approved";
+  const waitingForVendor = profile.applicationStatus === "approved" && !worker;
   return (
     <div className="app-viewport picker-app-shell text-slate-900">
       <header className="app-header picker-app-header sticky top-0 z-20 border-b border-slate-200/80 bg-white/95">
@@ -562,7 +568,7 @@ export default function App() {
       </header>
       <main className="mx-auto w-full max-w-2xl px-4 py-5 pb-36 sm:px-6 sm:py-7 sm:pb-36">
         {error ? <div role="alert" className="picker-action-button mb-4 break-words rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
-        {applicationPending ? <ApplicationState profile={profile} /> : <>
+        {applicationPending || waitingForVendor ? <ApplicationState profile={profile} workerAssigned={Boolean(worker)} detail={error} /> : <>
           {tab === "picks" ? <Picks worker={worker} availableOrders={availableOrders} myOrders={myOrders} laneName={laneName} onClaim={claimOrder} onPick={markPicked} scannerOpen={scannerOpen} scanFeedback={scanFeedback} onOpenScanner={() => { setScanFeedback(null); setScannerOpen(true); }} onCloseScanner={() => setScannerOpen(false)} onBarcodeScanned={(value) => void handleBarcodeScanned(value)} /> : null}
           {tab === "history" ? <HistoryView tasks={historyTasks} completedCount={completedCount} refreshing={refreshing} onRefresh={() => void load(true)} /> : null}
           {tab === "profile" ? <Profile profile={profile} assignedVendor={assignedVendor} registrationDetails={registrationDetails} itemsPicked={completedCount} ordersWorked={ordersWorked} onAvailability={setAvailability} onRefresh={() => void load(true)} onSignOut={signOut} refreshing={refreshing} /> : null}
@@ -734,7 +740,7 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
         if (signupError.status === 422 || /already registered|user already registered/i.test(signupError.message || "")) {
           // Do not query or reveal an existing account's Picker ID from the public client.
           setMode("login");
-          setMessage("This email may already be registered. Sign in with your Picker ID and 4-digit PIN, or contact support if you no longer have your ID.");
+          setMessage("This email may already be registered. Sign in with your Picker ID and Password (maximum 4 characters), or contact support if you no longer have your ID.");
           return;
         }
         setLocalError(signupError.message); return;
@@ -802,10 +808,25 @@ function FormField({ label, value, onChange, type = "text", autoComplete, inputM
   </label>;
 }
 
-function ApplicationState({ profile }: { profile: PickerProfile }) {
-  const label = profile.applicationStatus === "pending" ? "Waiting for approval" : profile.applicationStatus === "rejected" ? "Application not approved" : "Picker access paused";
-  return <section className="space-y-4"><div><p className="text-sm text-slate-500">Application status</p><h1 className="text-2xl font-black">{label}</h1></div>
-    <div className="picker-action-button rounded-2xl border bg-white p-5"><p className="text-sm text-slate-600">Your Picker profile is registered with RivoCity. An admin must approve it before vendors can request you.</p>
+function ApplicationState({ profile, workerAssigned, detail }: { profile: PickerProfile; workerAssigned: boolean; detail: string | null }) {
+  const label = workerAssigned
+    ? "Picker account ready"
+    : profile.applicationStatus === "pending"
+      ? "Waiting for approval"
+      : profile.applicationStatus === "rejected"
+        ? "Application not approved"
+        : profile.applicationStatus === "suspended"
+          ? "Picker access paused"
+          : "Waiting for vendor assignment";
+  const description = workerAssigned
+    ? "Your Picker account is ready."
+    : profile.applicationStatus === "pending"
+      ? "Your profile is registered. An admin must approve it before vendors can request you."
+      : profile.applicationStatus === "approved"
+        ? "Your profile is approved. RivoCity or your creating vendor must assign your Picker account to a store before picking can begin."
+        : "Your Picker profile cannot access order picking at this time. Contact RivoCity support for assistance.";
+  return <section className="space-y-4"><div><p className="text-sm text-slate-500">Account status</p><h1 className="text-2xl font-black">{label}</h1></div>
+    <div className="picker-action-button rounded-2xl border bg-white p-5"><p className="text-sm text-slate-600">{detail || description}</p>
       <p className="mt-4 break-words text-sm font-bold text-slate-500">Location: {profile.city}{profile.locality ? " · " + profile.locality : ""}</p>
       <InfoRow label="Picker ID" value={profile.pickerLoginId} /><InfoRow label="Registered email" value={profile.email} />
     </div>
