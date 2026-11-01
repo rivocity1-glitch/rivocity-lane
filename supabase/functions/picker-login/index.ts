@@ -50,6 +50,27 @@ Deno.serve(async (request: Request) => {
   });
 
   try {
+    const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+    const clientIp = request.headers.get("cf-connecting-ip") || forwardedFor || "unknown";
+    const keyBytes = new TextEncoder().encode(`${clientIp}:${pickerId}`);
+    const digest = await crypto.subtle.digest("SHA-256", keyBytes);
+    const rateLimitKey = Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+
+    const { data: canTry, error: rateLimitError } = await admin.rpc("consume_picker_login_attempt", {
+      p_key_hash: rateLimitKey,
+      p_failed: false,
+      p_success: false,
+    });
+    if (rateLimitError) {
+      console.error("Picker login rate-limit check failed:", rateLimitError.message);
+      return jsonResponse({ error: "Picker sign-in is temporarily unavailable." }, 503);
+    }
+    if (canTry !== true) {
+      return jsonResponse({ error: "Too many unsuccessful attempts. Try again in 15 minutes." }, 429);
+    }
+
     const { data: profile, error: profileError } = await admin
       .from("picker_profiles")
       .select("email")
@@ -61,7 +82,10 @@ Deno.serve(async (request: Request) => {
       return jsonResponse({ error: "Unable to verify these credentials. Try again." }, 503);
     }
     if (!profile?.email) {
-      return jsonResponse({ error: "Picker ID or PIN is incorrect." }, 401);
+      await admin.rpc("consume_picker_login_attempt", {
+        p_key_hash: rateLimitKey, p_failed: true, p_success: false,
+      });
+      return jsonResponse({ error: "Picker ID or password is incorrect." }, 401);
     }
 
     // Existing registrations store the four-digit PIN using this Auth password
@@ -72,8 +96,20 @@ Deno.serve(async (request: Request) => {
     });
 
     if (authError || !data.session) {
-      return jsonResponse({ error: "Picker ID or PIN is incorrect." }, 401);
+      const { data: canContinue, error: recordError } = await admin.rpc("consume_picker_login_attempt", {
+        p_key_hash: rateLimitKey, p_failed: true, p_success: false,
+      });
+      if (recordError) console.error("Picker login failure could not be rate-limited:", recordError.message);
+      if (canContinue === false) {
+        return jsonResponse({ error: "Too many unsuccessful attempts. Try again in 15 minutes." }, 429);
+      }
+      return jsonResponse({ error: "Picker ID or password is incorrect." }, 401);
     }
+
+    const { error: clearError } = await admin.rpc("consume_picker_login_attempt", {
+      p_key_hash: rateLimitKey, p_failed: false, p_success: true,
+    });
+    if (clearError) console.error("Picker login success could not clear rate limit:", clearError.message);
 
     return jsonResponse({
       session: {
