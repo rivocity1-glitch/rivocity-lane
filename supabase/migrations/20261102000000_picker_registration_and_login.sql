@@ -35,7 +35,7 @@ BEGIN
     IF v_max_id >= 9999 THEN
       RAISE EXCEPTION 'Picker ID range is exhausted (PC-9999 already exists)';
     END IF;
-    PERFORM setval('public.picker_login_id_seq', v_max_id, true);
+    PERFORM setval('public.picker_login_id_seq', greatest(v_max_id, 999), true);
   END IF;
 END;
 $$;
