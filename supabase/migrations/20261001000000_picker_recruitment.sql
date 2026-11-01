@@ -8,6 +8,12 @@ create table if not exists public.picker_profiles (
   pincode text null,
   latitude double precision null,
   longitude double precision null,
+  picker_login_id text,
+  email text,
+  registration_source text not null default 'pwa',
+  created_by_vendor_id uuid references public.vendors(id) on delete set null,
+  address text,
+  documents_submitted jsonb not null default '[]'::jsonb,
   availability_status text not null default 'offline'
     check (availability_status in ('available','offline','busy')),
   application_status text not null default 'pending'
@@ -15,6 +21,23 @@ create table if not exists public.picker_profiles (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Keep this migration self-contained even when picker_profiles was created by
+-- an earlier/manual deployment with the original minimal schema.
+ALTER TABLE public.picker_profiles
+  ADD COLUMN IF NOT EXISTS picker_login_id text,
+  ADD COLUMN IF NOT EXISTS email text,
+  ADD COLUMN IF NOT EXISTS registration_source text NOT NULL DEFAULT 'pwa',
+  ADD COLUMN IF NOT EXISTS created_by_vendor_id uuid REFERENCES public.vendors(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS address text,
+  ADD COLUMN IF NOT EXISTS documents_submitted jsonb NOT NULL DEFAULT '[]'::jsonb;
+
+create unique index if not exists picker_profiles_picker_login_id_uidx
+  on public.picker_profiles(picker_login_id)
+  where picker_login_id is not null;
+create index if not exists picker_profiles_email_idx
+  on public.picker_profiles(lower(email))
+  where email is not null;
 
 create index if not exists picker_profiles_auth_user_idx
   on public.picker_profiles(auth_user_id);

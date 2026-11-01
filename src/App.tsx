@@ -158,7 +158,8 @@ export default function App() {
       const user = session?.user ?? null;
       if (!user) {
         setProfile(null); setWorker(null); setOrders([]); setTasks([]); setHistoryTasks([]);
-        setLaneName(null); setRegistrationDetails(emptyRegistrationDetails); setLoading(false);
+        setLaneName(null); setAssignedVendor({ name: null, area: null });
+        setRegistrationDetails(emptyRegistrationDetails); setScannerOpen(false); setScanFeedback(null); setLoading(false);
         return;
       }
 
@@ -170,7 +171,7 @@ export default function App() {
       if (!p) {
         await supabase.auth.signOut();
         setProfile(null); setWorker(null); setOrders([]); setTasks([]); setHistoryTasks([]);
-        setLaneName(null); setLoading(false);
+        setLaneName(null); setAssignedVendor({ name: null, area: null }); setLoading(false);
         setError("Your Picker profile could not be found. Please contact RivoCity support.");
         return;
       }
@@ -217,6 +218,7 @@ export default function App() {
       if (workerError) throw workerError;
       if (!workerRow) {
         setWorker(null); setOrders([]); setTasks([]); setHistoryTasks([]); setLaneName(null);
+        setAssignedVendor({ name: null, area: null });
         if (p.application_status === "approved") {
           setError(
             p.registration_source === "vendor" && p.created_by_vendor_id
@@ -346,7 +348,8 @@ export default function App() {
 
       const { data: laneAssignment, error: laneError } = await supabase
         .from("vendor_lane_picker_assignments").select("vendor_lanes(lane_name)")
-        .eq("worker_id", workerRow.id).eq("status", "active").maybeSingle();
+        .eq("worker_id", workerRow.id).eq("status", "active")
+        .order("assigned_at", { ascending: false }).limit(1).maybeSingle();
       if (laneError) console.warn("Optional lane assignment could not be loaded:", laneError);
       setLaneName((laneAssignment as any)?.vendor_lanes?.lane_name || null);
     } catch (loadError: any) {
@@ -488,28 +491,58 @@ export default function App() {
   }
 
   async function signIn(event: React.FormEvent) {
-    event.preventDefault(); setSigningIn(true); setError(null);
-    if (!/^PC-[0-9]{4}$/.test(loginId.trim()) || password.length < 1 || password.length > 4) {
-      setError("Enter a valid Picker ID and a password of maximum 4 characters.");
-      setSigningIn(false); return;
+    event.preventDefault();
+    setSigningIn(true);
+    setError(null);
+
+    const pickerId = loginId.trim().toUpperCase();
+    if (!/^PC-[0-9]{4}$/.test(pickerId) || password.length < 1 || password.length > 4) {
+      setError("Enter a valid Picker ID and a password of up to 4 characters.");
+      setSigningIn(false);
+      return;
     }
-    const { data: pickerEmail, error: pickerError } = await supabase.rpc("get_picker_login_email", { p_picker_login_id: loginId.trim() });
-    if (pickerError || !pickerEmail) { setError("Picker ID not found."); setSigningIn(false); return; }
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email: pickerEmail, password: "Rivo@" + password });
-    if (signInError) setError(signInError.message || "Unable to sign in.");
-    setSigningIn(false);
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/picker-login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY || "",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY || ""}`,
+        },
+        body: JSON.stringify({ pickerId, pin: password }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.session?.access_token || !result.session?.refresh_token) {
+        setError(result.error || "Picker ID or PIN is incorrect.");
+        return;
+      }
+
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: result.session.access_token,
+        refresh_token: result.session.refresh_token,
+      });
+      if (sessionError) setError(sessionError.message || "Unable to start your Picker session.");
+    } catch (loginError: any) {
+      setError(loginError?.message || "Unable to connect. Check your internet connection and try again.");
+    } finally {
+      setSigningIn(false);
+    }
   }
 
   async function signOut() {
     await supabase.auth.signOut();
     setProfile(null); setWorker(null); setOrders([]); setTasks([]); setHistoryTasks([]);
-    setLaneName(null); setRegistrationDetails(emptyRegistrationDetails); setTab("picks");
+    setLaneName(null); setAssignedVendor({ name: null, area: null });
+    setRegistrationDetails(emptyRegistrationDetails); setTab("picks");
+    setScannerOpen(false); setScanFeedback(null); setError(null);
   }
 
   if (loading) return <div className="app-viewport flex items-center justify-center px-4 text-center text-sm font-bold text-slate-500">Loading RivoCity Picker…</div>;
   if (!profile) return <RegisterOrLogin loginId={loginId} email={email} password={password} setLoginId={setLoginId} setEmail={setEmail} setPassword={setPassword} onSignIn={signIn} signingIn={signingIn} error={error} />;
 
   const applicationPending = profile.applicationStatus !== "approved";
+  const waitingForVendor = profile.applicationStatus === "approved" && !worker;
   return (
     <div className="app-viewport picker-app-shell text-slate-900">
       <header className="app-header picker-app-header sticky top-0 z-20 border-b border-slate-200/80 bg-white/95">
@@ -535,7 +568,7 @@ export default function App() {
       </header>
       <main className="mx-auto w-full max-w-2xl px-4 py-5 pb-36 sm:px-6 sm:py-7 sm:pb-36">
         {error ? <div role="alert" className="picker-action-button mb-4 break-words rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
-        {applicationPending ? <ApplicationState profile={profile} /> : <>
+        {applicationPending || waitingForVendor ? <ApplicationState profile={profile} workerAssigned={Boolean(worker)} detail={error} /> : <>
           {tab === "picks" ? <Picks worker={worker} availableOrders={availableOrders} myOrders={myOrders} laneName={laneName} onClaim={claimOrder} onPick={markPicked} scannerOpen={scannerOpen} scanFeedback={scanFeedback} onOpenScanner={() => { setScanFeedback(null); setScannerOpen(true); }} onCloseScanner={() => setScannerOpen(false)} onBarcodeScanned={(value) => void handleBarcodeScanned(value)} /> : null}
           {tab === "history" ? <HistoryView tasks={historyTasks} completedCount={completedCount} refreshing={refreshing} onRefresh={() => void load(true)} /> : null}
           {tab === "profile" ? <Profile profile={profile} assignedVendor={assignedVendor} registrationDetails={registrationDetails} itemsPicked={completedCount} ordersWorked={ordersWorked} onAvailability={setAvailability} onRefresh={() => void load(true)} onSignOut={signOut} refreshing={refreshing} /> : null}
@@ -568,10 +601,18 @@ function BarcodeScannerPanel({ open, feedback, onOpen, onClose, onScan }: {
     let stream: MediaStream | null = null;
     let intervalId: number | null = null;
     let stopped = false;
+    let detecting = false;
     let detector: any = null;
     const video = document.getElementById("picker-barcode-video") as HTMLVideoElement | null;
     setCameraError(null);
     setCameraActive(false);
+
+    const stopCamera = () => {
+      stream?.getTracks().forEach(track => track.stop());
+      if (video) video.srcObject = null;
+      stream = null;
+      setCameraActive(false);
+    };
 
     const start = async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -579,32 +620,55 @@ function BarcodeScannerPanel({ open, feedback, onOpen, onClose, onScan }: {
         return;
       }
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
-        if (stopped) { stream.getTracks().forEach(track => track.stop()); return; }
-        if (video) { video.srcObject = stream; await video.play(); }
-        setCameraActive(true);
         const BarcodeDetectorConstructor = (window as any).BarcodeDetector;
         if (!BarcodeDetectorConstructor) {
-          setCameraError("This browser does not support native barcode detection. Enter the digits below or use a supported mobile browser.");
+          setCameraError("This browser does not support native barcode detection. Enter the barcode or SKU manually.");
           return;
         }
-        detector = new BarcodeDetectorConstructor({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code"] });
+
+        const requestedFormats = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code"];
+        const supportedFormats = typeof BarcodeDetectorConstructor.getSupportedFormats === "function"
+          ? await BarcodeDetectorConstructor.getSupportedFormats()
+          : requestedFormats;
+        const formats = requestedFormats.filter(format => supportedFormats.includes(format));
+        if (!formats.length) {
+          setCameraError("This browser cannot scan the supported barcode formats. Enter the barcode or SKU manually.");
+          return;
+        }
+
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+        if (stopped) { stopCamera(); return; }
+        if (!video) {
+          setCameraError("Camera preview could not be started. Enter the barcode or SKU manually.");
+          stopCamera();
+          return;
+        }
+        video.srcObject = stream;
+        await video.play();
+        if (stopped) { stopCamera(); return; }
+        setCameraActive(true);
+
+        detector = new BarcodeDetectorConstructor({ formats });
         intervalId = window.setInterval(async () => {
-          if (stopped || !video || video.readyState < 2) return;
+          if (stopped || detecting || !video || video.readyState < 2) return;
+          detecting = true;
           try {
             const detected = await detector.detect(video);
-            if (detected?.length && detected[0].rawValue) {
+            if (!stopped && detected?.length && detected[0].rawValue) {
               const value = String(detected[0].rawValue);
               stopped = true;
               if (intervalId !== null) window.clearInterval(intervalId);
-              stream?.getTracks().forEach(track => track.stop());
+              stopCamera();
               onScanRef.current(value);
             }
           } catch (error) {
             console.debug("Barcode detection attempt failed:", error);
+          } finally {
+            detecting = false;
           }
         }, 350);
       } catch {
+        stopCamera();
         setCameraError("Camera permission was denied or unavailable. Allow camera access, or enter the barcode manually.");
       }
     };
@@ -692,7 +756,8 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
 
   const register = async (event: React.FormEvent) => {
     event.preventDefault(); setMessage(""); setLocalError("");
-    if (!name.trim() || !phone.trim() || !city.trim() || !email.trim() || !password) { setLocalError("Fill all required fields."); return; }
+    if (!name.trim() || !phone.trim() || !city.trim() || !email.trim()) { setLocalError("Fill all required fields."); return; }
+    if (!/^[0-9]{4}$/.test(password)) { setLocalError("Choose a 4-digit PIN for new registrations."); return; }
     if (pincode && !/^[0-9]{6}$/.test(pincode)) { setLocalError("Pincode must be exactly 6 digits."); return; }
     setSubmitting(true);
     try {
@@ -704,17 +769,18 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
       });
       if (signupError) {
         if (signupError.status === 422 || /already registered|user already registered/i.test(signupError.message || "")) {
-          const existingEmail = email.trim().toLowerCase();
-          const { data: existingPicker } = await supabase.from("picker_profiles").select("picker_login_id").eq("email", existingEmail).maybeSingle();
-          setEmail(existingEmail);
-          if (existingPicker?.picker_login_id) setLoginId(existingPicker.picker_login_id);
+          // Do not query or reveal an existing account's Picker ID from the public client.
           setMode("login");
-          setMessage(existingPicker?.picker_login_id ? "This email is already registered. Your Picker ID is " + existingPicker.picker_login_id + ". Sign in with that ID and your password." : "This email is already registered. Sign in with your existing Picker ID and password.");
+          setMessage("This email may already be registered. Sign in with your Picker ID and Password (maximum 4 characters), or contact support if you no longer have your ID.");
           return;
         }
         setLocalError(signupError.message); return;
       }
-      const generatedId = data.user?.user_metadata?.picker_login_id || "assigned by RivoCity";
+      const generatedId = data.user?.user_metadata?.picker_login_id;
+      if (!generatedId) {
+        setLocalError("Your Auth account was created, but a Picker ID was not returned. Do not register again. Ask RivoCity support to complete the account setup.");
+        return;
+      }
       setMessage(data.session ? "Registration submitted. Your Picker ID is " + generatedId + ". Your profile is pending Admin approval." :
         "Registration submitted. Your Picker ID is " + generatedId + ". Check your email to confirm your account, then wait for Admin approval.");
     } catch (registrationError: any) {
@@ -751,7 +817,7 @@ function RegisterOrLogin({ loginId, email, password, setLoginId, setEmail, setPa
           <input value={email} onChange={event => setEmail(event.target.value)} type="email" autoComplete="email" required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
         </label>
       </>}
-      <label className="mt-3 block text-xs font-bold text-slate-600">Password (maximum 4 characters)
+      <label className="mt-3 block text-xs font-bold text-slate-600">4-digit PIN
         <input value={password} maxLength={4} onChange={event => setPassword(event.target.value.slice(0, 4))} type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
       </label>
       <button disabled={signingIn || submitting} className="picker-action-button touch-button mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 font-black text-white disabled:opacity-60">
@@ -773,10 +839,25 @@ function FormField({ label, value, onChange, type = "text", autoComplete, inputM
   </label>;
 }
 
-function ApplicationState({ profile }: { profile: PickerProfile }) {
-  const label = profile.applicationStatus === "pending" ? "Waiting for approval" : profile.applicationStatus === "rejected" ? "Application not approved" : "Picker access paused";
-  return <section className="space-y-4"><div><p className="text-sm text-slate-500">Application status</p><h1 className="text-2xl font-black">{label}</h1></div>
-    <div className="picker-action-button rounded-2xl border bg-white p-5"><p className="text-sm text-slate-600">Your Picker profile is registered with RivoCity. An admin must approve it before vendors can request you.</p>
+function ApplicationState({ profile, workerAssigned, detail }: { profile: PickerProfile; workerAssigned: boolean; detail: string | null }) {
+  const label = workerAssigned
+    ? "Picker account ready"
+    : profile.applicationStatus === "pending"
+      ? "Waiting for approval"
+      : profile.applicationStatus === "rejected"
+        ? "Application not approved"
+        : profile.applicationStatus === "suspended"
+          ? "Picker access paused"
+          : "Waiting for vendor assignment";
+  const description = workerAssigned
+    ? "Your Picker account is ready."
+    : profile.applicationStatus === "pending"
+      ? "Your profile is registered. An admin must approve it before vendors can request you."
+      : profile.applicationStatus === "approved"
+        ? "Your profile is approved. RivoCity or your creating vendor must assign your Picker account to a store before picking can begin."
+        : "Your Picker profile cannot access order picking at this time. Contact RivoCity support for assistance.";
+  return <section className="space-y-4"><div><p className="text-sm text-slate-500">Account status</p><h1 className="text-2xl font-black">{label}</h1></div>
+    <div className="picker-action-button rounded-2xl border bg-white p-5"><p className="text-sm text-slate-600">{detail || description}</p>
       <p className="mt-4 break-words text-sm font-bold text-slate-500">Location: {profile.city}{profile.locality ? " · " + profile.locality : ""}</p>
       <InfoRow label="Picker ID" value={profile.pickerLoginId} /><InfoRow label="Registered email" value={profile.email} />
     </div>
