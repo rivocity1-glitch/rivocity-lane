@@ -503,26 +503,26 @@ export default function App() {
     }
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/picker-login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY || "",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY || ""}`,
-        },
-        body: JSON.stringify({ pickerId, pin: password }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result.session?.access_token || !result.session?.refresh_token) {
-        setError(result.error || "Picker ID or PIN is incorrect.");
+      // Resolve the Picker ID to its Auth email through a small Supabase RPC,
+      // then use the standard Supabase password sign-in. No Edge Function required.
+      const { data: email, error: lookupError } = await supabase.rpc(
+        "get_picker_login_email",
+        { p_picker_login_id: pickerId }
+      );
+
+      if (lookupError || typeof email !== "string" || !email) {
+        setError("Picker ID or PIN is incorrect.");
         return;
       }
 
-      const { error: sessionError } = await supabase.auth.setSession({
-        access_token: result.session.access_token,
-        refresh_token: result.session.refresh_token,
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password: "Rivo@" + password,
       });
-      if (sessionError) setError(sessionError.message || "Unable to start your Picker session.");
+
+      if (signInError) {
+        setError("Picker ID or PIN is incorrect.");
+      }
     } catch (loginError: any) {
       setError(loginError?.message || "Unable to connect. Check your internet connection and try again.");
     } finally {
