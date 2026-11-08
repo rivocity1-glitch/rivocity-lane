@@ -3,10 +3,11 @@ name: Picker CI
 on:
   push:
     branches:
+      - main
       - testing
-      - audit/picker-testing-fixes
   pull_request:
     branches:
+      - main
       - testing
 
 permissions:
