@@ -15,6 +15,8 @@ export type Task={
   laneName:string|null;
   rackName:string|null;
   quantity:number;
+  looseQuantity:number|null;
+  quantityUnit:string|null;
   status:TaskStatus;
   assignedAt:string;
   completedAt:string;
