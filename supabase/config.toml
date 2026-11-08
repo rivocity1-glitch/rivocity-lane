@@ -1,0 +1,5 @@
+# Supabase local/deployment configuration.
+# Picker ID + PIN is a public sign-in endpoint; the function validates credentials
+# server-side and applies IP + Picker ID rate limiting before issuing a session.
+[functions.picker-login]
+verify_jwt = false
