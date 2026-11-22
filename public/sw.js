@@ -1,5 +1,5 @@
-const CACHE_NAME = "rivocity-lane-v3";
-const SHELL_URLS = ["/", "/manifest.webmanifest"];
+const CACHE_NAME = "rivocity-lane-v5";
+const SHELL_URLS = ["/", "/manifest.webmanifest", "/pwa-icon.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

@@ -27,9 +27,15 @@ if (typeof window !== "undefined") {
 }
 
 
-function isAndroidDevice() {
+type InstallPlatform = "android" | "ios" | "desktop";
+
+function getInstallPlatform(): InstallPlatform {
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
-  return /android/i.test(nav.userAgentData?.platform || navigator.userAgent);
+  const platform = nav.userAgentData?.platform || navigator.userAgent;
+  if (/android/i.test(platform)) return "android";
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) return "ios";
+  return "desktop";
 }
 
 function isStandaloneDisplay() {
@@ -39,84 +45,83 @@ function isStandaloneDisplay() {
 
 function InstallAppCard() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(() => pendingPickerInstallPrompt);
-  const [installed, setInstalled] = useState(isStandaloneDisplay);
-  const [android, setAndroid] = useState(isAndroidDevice);
   const [showHelp, setShowHelp] = useState(false);
+  const [installed, setInstalled] = useState(isStandaloneDisplay);
+  const platform = getInstallPlatform();
 
   useEffect(() => {
-    const refreshPlatform = () => setAndroid(isAndroidDevice());
-    const displayMode = window.matchMedia("(display-mode: standalone)");
-    const refreshInstalled = () => setInstalled(isStandaloneDisplay());
-
     const onBeforeInstall = (event: Event) => {
       event.preventDefault();
       pendingPickerInstallPrompt = event as BeforeInstallPromptEvent;
       setInstallEvent(pendingPickerInstallPrompt);
     };
-    const onInstallPromptAvailable = () => setInstallEvent(pendingPickerInstallPrompt);
+    const onPromptAvailable = () => setInstallEvent(pendingPickerInstallPrompt);
     const onInstalled = () => {
       setInstalled(true);
       setInstallEvent(null);
       pendingPickerInstallPrompt = null;
       setShowHelp(false);
     };
-
+    const media = window.matchMedia("(display-mode: standalone)");
+    const onDisplayChange = () => setInstalled(isStandaloneDisplay());
     window.addEventListener("beforeinstallprompt", onBeforeInstall);
-    window.addEventListener("rivocity:installprompt", onInstallPromptAvailable);
+    window.addEventListener("rivocity:installprompt", onPromptAvailable);
     window.addEventListener("appinstalled", onInstalled);
-    displayMode.addEventListener?.("change", refreshInstalled);
-    refreshPlatform();
-    refreshInstalled();
-
+    media.addEventListener?.("change", onDisplayChange);
     return () => {
       window.removeEventListener("beforeinstallprompt", onBeforeInstall);
-      window.removeEventListener("rivocity:installprompt", onInstallPromptAvailable);
+      window.removeEventListener("rivocity:installprompt", onPromptAvailable);
       window.removeEventListener("appinstalled", onInstalled);
-      displayMode.removeEventListener?.("change", refreshInstalled);
+      media.removeEventListener?.("change", onDisplayChange);
     };
   }, []);
 
-  if (!android || installed) return null;
+  if (installed) return null;
 
   const install = async () => {
-    if (!installEvent) {
-      setShowHelp(true);
-      return;
+    if (installEvent) {
+      try {
+        await installEvent.prompt();
+        const choice = await installEvent.userChoice;
+        setInstallEvent(null);
+        pendingPickerInstallPrompt = null;
+        if (choice.outcome === "accepted") return;
+      } catch (error) {
+        console.warn("Native PWA install prompt failed:", error);
+      }
     }
-    await installEvent.prompt();
-    const choice = await installEvent.userChoice;
-    setInstallEvent(null);
-    pendingPickerInstallPrompt = null;
-    if (choice.outcome === "accepted") setShowHelp(false);
-    else setShowHelp(true);
+    setShowHelp(true);
   };
 
   return (
-    <section aria-label="Install RivoCity Picker" className="picker-action-button install-card-enter mb-4 w-full max-w-md rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-sm sm:p-5">
-      <div className="flex items-start gap-3">
-        <div className="picker-action-button flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-xl text-white shadow-sm" aria-hidden="true">
-          <Package size={23} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="font-black text-slate-900">Add Picker to your home screen</h2>
-          <p className="mt-1 text-sm leading-5 text-slate-600">Open RivoCity Picker like an app from your Android home screen. No Play Store download needed.</p>
-          <button type="button" onClick={() => void install()} className="picker-action-button touch-button mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 font-black text-white shadow-sm hover:bg-emerald-700">
-            <DownloadIcon />{installEvent ? "Install App" : "How to Install"}
-          </button>
-        </div>
-      </div>
-      {showHelp && !installEvent ? (
-        <div role="status" className="picker-action-button mt-4 rounded-xl border border-emerald-100 bg-white p-3 text-sm text-slate-700">
-          <p className="font-black">Install using Chrome</p>
-          <ol className="mt-2 list-decimal space-y-1 pl-5">
-            <li>Open this website in Google Chrome on Android.</li>
-            <li>Tap Chrome's three-dot menu (⋮).</li>
-            <li>Choose <strong>Install app</strong> or <strong>Add to Home screen</strong>, then confirm.</li>
-          </ol>
-          <button type="button" onClick={() => setShowHelp(false)} className="mt-2 text-sm font-bold text-emerald-700">Got it</button>
+    <>
+      <button type="button" onClick={() => void install()} aria-label="Install RivoCity Picker" title="Install RivoCity Picker"
+        className="fixed right-4 top-4 z-50 flex h-11 w-11 items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 shadow-md hover:bg-emerald-100">
+        <DownloadIcon />
+      </button>
+      {showHelp ? (
+        <div role="dialog" aria-modal="true" aria-label="Install RivoCity Picker" className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-black text-slate-900">Install RivoCity Picker</h2>
+            <p className="mt-2 text-sm text-slate-600">Add Picker to your device for an app-like experience.</p>
+            {platform === "ios" ? (
+              <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-700">
+                <li>Open this page in Safari.</li><li>Tap Share, then <strong>Add to Home Screen</strong>.</li><li>Tap <strong>Add</strong>.</li>
+              </ol>
+            ) : platform === "android" ? (
+              <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-700">
+                <li>Open this page in Chrome.</li><li>Open the three-dot menu.</li><li>Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>
+              </ol>
+            ) : (
+              <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm text-slate-700">
+                <li>Open the Chrome or Edge menu.</li><li>Select <strong>Install RivoCity Picker</strong> or <strong>Apps → Install this site as an app</strong>.</li>
+              </ol>
+            )}
+            <button type="button" onClick={() => setShowHelp(false)} className="mt-4 w-full rounded-xl bg-emerald-600 px-4 py-3 font-bold text-white">Got it</button>
+          </div>
         </div>
       ) : null}
-    </section>
+    </>
   );
 }
 
@@ -432,21 +437,30 @@ export default function App() {
     setSigningIn(true);
     setError(null);
 
-    const loginEmail = email.trim().toLowerCase();
-    if (!loginEmail || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(loginEmail) || !password) {
-      setError("Enter your email address and password.");
+    const pickerId = email.trim().toUpperCase();
+    if (!/^PC-[0-9]{4}$/.test(pickerId) || !password) {
+      setError("Enter your Picker ID (for example, PC-1234) and password.");
       setSigningIn(false);
       return;
     }
 
     try {
-      // Use Supabase Auth directly; no Edge Function or public Picker-ID lookup is required.
-      let result = await supabase.auth.signInWithPassword({ email: loginEmail, password });
+      // Resolve the canonical Picker ID through the database RPC, then authenticate with Supabase Auth.
+      const { data: loginEmail, error: lookupError } = await supabase.rpc("get_picker_login_email", {
+        p_picker_login_id: pickerId,
+      });
+      if (lookupError) throw lookupError;
+      if (typeof loginEmail !== "string" || !loginEmail.trim()) {
+        setError("Picker ID or password is incorrect. Check your details or contact RivoCity support.");
+        return;
+      }
+
+      let result = await supabase.auth.signInWithPassword({ email: loginEmail.trim().toLowerCase(), password });
       // Backward compatibility for existing Picker accounts created with the old Rivo@ + PIN format.
       if (result.error && /^[0-9]{4}$/.test(password)) {
-        result = await supabase.auth.signInWithPassword({ email: loginEmail, password: "Rivo@" + password });
+        result = await supabase.auth.signInWithPassword({ email: loginEmail.trim().toLowerCase(), password: "Rivo@" + password });
       }
-      if (result.error) setError("Email or password is incorrect.");
+      if (result.error) setError("Picker ID or password is incorrect.");
     } catch (loginError: any) {
       setError(loginError?.message || "Unable to connect. Check your internet connection and try again.");
     } finally {
@@ -578,7 +592,7 @@ function RegisterOrLogin({ email, password, setEmail, setPassword, onSignIn, sig
         if (signupError.status === 422 || /already registered|user already registered/i.test(signupError.message || "")) {
           // Do not query or reveal an existing account's Picker ID from the public client.
           setMode("login");
-          setMessage("This email may already be registered. Sign in using your email address and password.");
+          setMessage("This email may already be registered. Sign in using your Picker ID and password.");
           return;
         }
         setLocalError(signupError.message); return;
@@ -609,8 +623,8 @@ function RegisterOrLogin({ email, password, setEmail, setPassword, onSignIn, sig
       <p className="mt-1 text-sm text-slate-500">{mode === "login" ? "Worker sign in" : "Register as a Picker"}</p>
       {(error || localError) ? <div role="alert" className="picker-action-button mt-4 break-words rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error || localError}</div> : null}
       {message ? <div role="status" className="picker-action-button mt-4 break-words rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</div> : null}
-      {mode === "login" ? <label className="mt-5 block text-xs font-bold text-slate-600">Email address
-        <input value={email} onChange={event => setEmail(event.target.value)} type="email" placeholder="you@example.com" autoComplete="username" required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
+      {mode === "login" ? <label className="mt-5 block text-xs font-bold text-slate-600">Picker ID
+        <input value={email} onChange={event => setEmail(event.target.value.toUpperCase())} type="text" inputMode="text" autoCapitalize="characters" maxLength={7} placeholder="PC-1234" autoComplete="username" required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
       </label> : <>
         <FormField label="Full name" value={name} onChange={setName} autoComplete="name" required />
         <FormField label="Mobile number" value={phone} onChange={setPhone} type="tel" autoComplete="tel" required />
