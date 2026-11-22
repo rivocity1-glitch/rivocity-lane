@@ -109,7 +109,7 @@ function InstallAppCard() {
             Use RivoCity Picker like an app, with a full-screen mobile workspace and a home-screen shortcut.
           </p>
           <button type="button" onClick={() => void install()} className="picker-action-button touch-button mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 font-black text-white shadow-sm hover:bg-emerald-700">
-            <DownloadIcon />{installEvent ? "Install App" : "How to Install"}
+            <DownloadIcon />Install App
           </button>
         </div>
       </div>
@@ -631,8 +631,8 @@ function RegisterOrLogin({ email, password, setEmail, setPassword, onSignIn, sig
       <p className="mt-1 text-sm text-slate-500">{mode === "login" ? "Worker sign in" : "Register as a Picker"}</p>
       {(error || localError) ? <div role="alert" className="picker-action-button mt-4 break-words rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error || localError}</div> : null}
       {message ? <div role="status" className="picker-action-button mt-4 break-words rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</div> : null}
-      {mode === "login" ? <label className="mt-5 block text-xs font-bold text-slate-600">Email address
-        <input value={email} onChange={event => setEmail(event.target.value)} type="email" placeholder="you@example.com" autoComplete="username" required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
+      {mode === "login" ? <label className="mt-5 block text-xs font-bold text-slate-600">Registered email address (not Picker ID)
+        <input value={email} onChange={event => setEmail(event.target.value)} type="email" placeholder="Enter your registered email address" autoComplete="username" required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
       </label> : <>
         <FormField label="Full name" value={name} onChange={setName} autoComplete="name" required />
         <FormField label="Mobile number" value={phone} onChange={setPhone} type="tel" autoComplete="tel" required />
