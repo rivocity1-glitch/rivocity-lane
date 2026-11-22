@@ -27,9 +27,15 @@ if (typeof window !== "undefined") {
 }
 
 
-function isAndroidDevice() {
+type MobilePlatform = "android" | "ios" | null;
+
+function getMobilePlatform(): MobilePlatform {
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
-  return /android/i.test(nav.userAgentData?.platform || navigator.userAgent);
+  const platform = nav.userAgentData?.platform || navigator.userAgent;
+  if (/android/i.test(platform)) return "android";
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent)
+    || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) return "ios";
+  return null;
 }
 
 function isStandaloneDisplay() {
@@ -40,11 +46,11 @@ function isStandaloneDisplay() {
 function InstallAppCard() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(() => pendingPickerInstallPrompt);
   const [installed, setInstalled] = useState(isStandaloneDisplay);
-  const [android, setAndroid] = useState(isAndroidDevice);
+  const [mobilePlatform, setMobilePlatform] = useState<MobilePlatform>(getMobilePlatform);
   const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
-    const refreshPlatform = () => setAndroid(isAndroidDevice());
+    const refreshPlatform = () => setMobilePlatform(getMobilePlatform());
     const displayMode = window.matchMedia("(display-mode: standalone)");
     const refreshInstalled = () => setInstalled(isStandaloneDisplay());
 
@@ -76,10 +82,10 @@ function InstallAppCard() {
     };
   }, []);
 
-  if (!android || installed) return null;
+  if (!mobilePlatform || installed) return null;
 
   const install = async () => {
-    if (!installEvent) {
+    if (mobilePlatform === "ios" || !installEvent) {
       setShowHelp(true);
       return;
     }
@@ -99,20 +105,30 @@ function InstallAppCard() {
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="font-black text-slate-900">Add Picker to your home screen</h2>
-          <p className="mt-1 text-sm leading-5 text-slate-600">Open RivoCity Picker like an app from your Android home screen. No Play Store download needed.</p>
+          <p className="mt-1 text-sm leading-5 text-slate-600">
+            Use RivoCity Picker like an app, with a full-screen mobile workspace and a home-screen shortcut.
+          </p>
           <button type="button" onClick={() => void install()} className="picker-action-button touch-button mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 font-black text-white shadow-sm hover:bg-emerald-700">
-            <DownloadIcon />{installEvent ? "Install App" : "How to Install"}
+            <DownloadIcon />{mobilePlatform === "android" && installEvent ? "Install App" : "How to Add"}
           </button>
         </div>
       </div>
       {showHelp && !installEvent ? (
         <div role="status" className="picker-action-button mt-4 rounded-xl border border-emerald-100 bg-white p-3 text-sm text-slate-700">
-          <p className="font-black">Install using Chrome</p>
-          <ol className="mt-2 list-decimal space-y-1 pl-5">
-            <li>Open this website in Google Chrome on Android.</li>
-            <li>Tap Chrome's three-dot menu (⋮).</li>
-            <li>Choose <strong>Install app</strong> or <strong>Add to Home screen</strong>, then confirm.</li>
-          </ol>
+          <p className="font-black">{mobilePlatform === "ios" ? "Add using Safari" : "Install using Chrome"}</p>
+          {mobilePlatform === "ios" ? (
+            <ol className="mt-2 list-decimal space-y-1 pl-5">
+              <li>Open this website in Safari on your iPhone or iPad.</li>
+              <li>Tap the Share button.</li>
+              <li>Scroll down and choose <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>.</li>
+            </ol>
+          ) : (
+            <ol className="mt-2 list-decimal space-y-1 pl-5">
+              <li>Open this website in Google Chrome on Android.</li>
+              <li>Tap Chrome's three-dot menu (⋮).</li>
+              <li>Choose <strong>Install app</strong> or <strong>Add to Home screen</strong>, then confirm.</li>
+            </ol>
+          )}
           <button type="button" onClick={() => setShowHelp(false)} className="mt-2 text-sm font-bold text-emerald-700">Got it</button>
         </div>
       ) : null}
