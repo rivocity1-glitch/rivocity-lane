@@ -27,15 +27,15 @@ if (typeof window !== "undefined") {
 }
 
 
-type MobilePlatform = "android" | "ios" | null;
+type InstallPlatform = "android" | "ios" | "desktop";
 
-function getMobilePlatform(): MobilePlatform {
+function getInstallPlatform(): InstallPlatform {
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
   const platform = nav.userAgentData?.platform || navigator.userAgent;
   if (/android/i.test(platform)) return "android";
   if (/iphone|ipad|ipod/i.test(navigator.userAgent)
     || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) return "ios";
-  return null;
+  return "desktop";
 }
 
 function isStandaloneDisplay() {
@@ -46,11 +46,11 @@ function isStandaloneDisplay() {
 function InstallAppCard() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(() => pendingPickerInstallPrompt);
   const [installed, setInstalled] = useState(isStandaloneDisplay);
-  const [mobilePlatform, setMobilePlatform] = useState<MobilePlatform>(getMobilePlatform);
+  const [platform, setPlatform] = useState<InstallPlatform>(getInstallPlatform);
   const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
-    const refreshPlatform = () => setMobilePlatform(getMobilePlatform());
+    const refreshPlatform = () => setPlatform(getInstallPlatform());
     const displayMode = window.matchMedia("(display-mode: standalone)");
     const refreshInstalled = () => setInstalled(isStandaloneDisplay());
 
@@ -82,10 +82,10 @@ function InstallAppCard() {
     };
   }, []);
 
-  if (!mobilePlatform || installed) return null;
+  if (installed) return null;
 
   const install = async () => {
-    if (mobilePlatform === "ios" || !installEvent) {
+    if (platform === "ios" || !installEvent) {
       setShowHelp(true);
       return;
     }
@@ -109,24 +109,30 @@ function InstallAppCard() {
             Use RivoCity Picker like an app, with a full-screen mobile workspace and a home-screen shortcut.
           </p>
           <button type="button" onClick={() => void install()} className="picker-action-button touch-button mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 font-black text-white shadow-sm hover:bg-emerald-700">
-            <DownloadIcon />{mobilePlatform === "android" && installEvent ? "Install App" : "How to Add"}
+            <DownloadIcon />{installEvent ? "Install App" : "How to Install"}
           </button>
         </div>
       </div>
       {showHelp && !installEvent ? (
         <div role="status" className="picker-action-button mt-4 rounded-xl border border-emerald-100 bg-white p-3 text-sm text-slate-700">
-          <p className="font-black">{mobilePlatform === "ios" ? "Add using Safari" : "Install using Chrome"}</p>
-          {mobilePlatform === "ios" ? (
+          <p className="font-black">{platform === "ios" ? "Add using Safari" : platform === "android" ? "Install using Chrome" : "Install using your browser"}</p>
+          {platform === "ios" ? (
             <ol className="mt-2 list-decimal space-y-1 pl-5">
               <li>Open this website in Safari on your iPhone or iPad.</li>
               <li>Tap the Share button.</li>
               <li>Scroll down and choose <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>.</li>
             </ol>
-          ) : (
+          ) : platform === "android" ? (
             <ol className="mt-2 list-decimal space-y-1 pl-5">
               <li>Open this website in Google Chrome on Android.</li>
               <li>Tap Chrome's three-dot menu (⋮).</li>
               <li>Choose <strong>Install app</strong> or <strong>Add to Home screen</strong>, then confirm.</li>
+            </ol>
+          ) : (
+            <ol className="mt-2 list-decimal space-y-1 pl-5">
+              <li>Open this website in Google Chrome or Microsoft Edge.</li>
+              <li>Open the browser menu (⋮) near the address bar.</li>
+              <li>Choose <strong>Install RivoCity Picker</strong> or <strong>Apps → Install this site as an app</strong>.</li>
             </ol>
           )}
           <button type="button" onClick={() => setShowHelp(false)} className="mt-2 text-sm font-bold text-emerald-700">Got it</button>
