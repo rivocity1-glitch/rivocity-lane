@@ -592,7 +592,7 @@ function RegisterOrLogin({ email, password, setEmail, setPassword, onSignIn, sig
         if (signupError.status === 422 || /already registered|user already registered/i.test(signupError.message || "")) {
           // Do not query or reveal an existing account's Picker ID from the public client.
           setMode("login");
-          setMessage("This email may already be registered. Sign in using your email address and password.");
+          setMessage("This email may already be registered. Sign in using your Picker ID and password.");
           return;
         }
         setLocalError(signupError.message); return;
