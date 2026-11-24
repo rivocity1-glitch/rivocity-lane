@@ -118,3 +118,203 @@ button:focus-visible { outline: 2px solid #059669; outline-offset: 2px; }
   .picker-action-button:active,
   .bottom-navigation button:active { transform: none; }
 }
+
+
+/* Mobile-first readability and app-like sizing */
+@media (max-width: 640px) {
+  html {
+    font-size: 17px;
+    width: 100%;
+    overflow-x: hidden;
+    text-size-adjust: 100%;
+  }
+
+  body, #root {
+    width: 100%;
+    min-width: 320px;
+    overflow-x: clip;
+  }
+
+  body {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  .app-viewport {
+    width: 100%;
+    min-height: 100svh;
+    min-height: 100dvh;
+  }
+
+  .picker-app-shell main {
+    width: 100%;
+    max-width: 44rem;
+    margin-inline: auto;
+    padding: 1.25rem 1rem calc(6rem + env(safe-area-inset-bottom));
+  }
+
+  .picker-app-header > div {
+    min-height: 4.5rem;
+    height: auto;
+    padding-inline: 1rem;
+    gap: 0.75rem;
+  }
+
+  .picker-app-header .text-xl {
+    font-size: 1.2rem;
+    line-height: 1.25;
+  }
+
+  .picker-app-header .tracking-\[0\.16em\] {
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+  }
+
+  .picker-app-shell main h1 {
+    font-size: clamp(1.55rem, 6vw, 1.9rem);
+    line-height: 1.2;
+  }
+
+  .picker-app-shell main h2 {
+    font-size: 1.2rem;
+    line-height: 1.3;
+  }
+
+  .picker-app-shell main p,
+  .picker-app-shell main li {
+    line-height: 1.55;
+  }
+
+  .picker-app-shell main .text-\[10px\],
+  .picker-app-shell main .text-\[11px\],
+  .picker-app-shell main .text-xs {
+    font-size: 0.875rem;
+    line-height: 1.45;
+  }
+
+  .picker-app-shell main .text-sm {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  .picker-app-shell main .text-base {
+    font-size: 1.0625rem;
+  }
+
+  .picker-app-shell main button,
+  .picker-app-shell form button {
+    min-height: 48px;
+    font-size: 1rem;
+  }
+
+  .picker-app-shell main .touch-target,
+  .picker-app-header .touch-target {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+  }
+
+  .picker-app-shell main input,
+  .picker-app-shell main select,
+  .picker-app-shell main textarea,
+  .app-viewport form input,
+  .app-viewport form select,
+  .app-viewport form textarea {
+    min-height: 50px;
+    font-size: 1rem;
+    line-height: 1.4;
+    padding-inline: 0.9rem;
+  }
+
+  .app-viewport form {
+    width: min(100%, 34rem);
+    padding: 1.25rem;
+    border-radius: 1.25rem;
+  }
+
+  .app-viewport form > .text-2xl {
+    font-size: 1.8rem;
+    line-height: 1.2;
+  }
+
+  .app-viewport form label {
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+
+  .picker-app-shell main article,
+  .picker-app-shell main [role="status"],
+  .picker-app-shell main [role="alert"] {
+    font-size: 1rem;
+  }
+
+  .picker-app-shell main .rounded-2xl,
+  .picker-app-shell main .rounded-xl {
+    scroll-margin-bottom: 6rem;
+  }
+
+  .bottom-navigation {
+    height: calc(4.5rem + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(14px);
+  }
+
+  .bottom-navigation > div {
+    height: 4.5rem;
+    padding-inline: 0.5rem;
+  }
+
+  .bottom-navigation button {
+    min-height: 4.25rem;
+    gap: 0.35rem;
+    font-size: 0.875rem;
+  }
+
+  .bottom-navigation button svg {
+    width: 1.35rem;
+    height: 1.35rem;
+  }
+
+  .bottom-navigation span {
+    font-size: 0.82rem;
+    line-height: 1.1;
+  }
+
+  .picker-action-button:active {
+    transform: scale(0.99);
+  }
+
+  .picker-app-shell main article:hover {
+    transform: none;
+  }
+}
+
+@media (max-width: 380px) {
+  html { font-size: 16px; }
+
+  .picker-app-shell main {
+    padding-inline: 0.8rem;
+  }
+
+  .picker-app-header > div {
+    padding-inline: 0.8rem;
+    gap: 0.55rem;
+  }
+
+  .picker-app-header .text-xl {
+    font-size: 1.08rem;
+  }
+
+  .app-viewport form {
+    padding: 1rem;
+  }
+}
+
+@media (min-width: 641px) {
+  .picker-app-shell main {
+    width: 100%;
+    max-width: 44rem;
+    margin-inline: auto;
+  }
+}
