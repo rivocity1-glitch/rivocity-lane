@@ -578,6 +578,7 @@ function RegisterOrLogin({ email, password, setEmail, setPassword, onSignIn, sig
   const register = async (event: React.FormEvent) => {
     event.preventDefault(); setMessage(""); setLocalError("");
     if (!name.trim() || !phone.trim() || !city.trim() || !email.trim()) { setLocalError("Fill all required fields."); return; }
+    if (!/^[0-9]{10}$/.test(phone)) { setLocalError("Mobile number must be exactly 10 digits."); return; }
     if (!/^[0-9]{4}$/.test(password)) { setLocalError("Choose a 4-digit PIN for new registrations."); return; }
     if (pincode && !/^[0-9]{6}$/.test(pincode)) { setLocalError("Pincode must be exactly 6 digits."); return; }
     setSubmitting(true);
@@ -610,10 +611,26 @@ function RegisterOrLogin({ email, password, setEmail, setPassword, onSignIn, sig
   };
 
   const captureLocation = () => {
-    if (!navigator.geolocation) { setLocalError("Location is not available on this device/browser."); return; }
+    setLocalError("");
+    if (!window.isSecureContext || !navigator.geolocation) {
+      setLocalError("Location requires HTTPS and browser location access. Open this page in Chrome or Safari and allow location permission.");
+      return;
+    }
+    setMessage("Getting your location…");
     navigator.geolocation.getCurrentPosition(position => {
-      setLat(position.coords.latitude); setLng(position.coords.longitude); setMessage("Location captured for nearby vendor matching.");
-    }, () => setLocalError("Location permission was not granted."), { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
+      setLat(position.coords.latitude);
+      setLng(position.coords.longitude);
+      setLocalError("");
+      setMessage("Location captured for nearby vendor matching.");
+    }, error => {
+      const locationMessage = error.code === error.PERMISSION_DENIED
+        ? "Location permission denied. Allow location access in your browser settings and try again."
+        : error.code === error.POSITION_UNAVAILABLE
+          ? "Your location is currently unavailable. Check device location services and try again."
+          : "Location request timed out. Move to an area with a better signal and try again.";
+      setMessage("");
+      setLocalError(locationMessage);
+    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 });
   };
 
   return <div className="app-viewport flex flex-col items-center justify-center bg-slate-50 px-3 py-6 sm:px-4">
@@ -627,7 +644,7 @@ function RegisterOrLogin({ email, password, setEmail, setPassword, onSignIn, sig
         <input value={email} onChange={event => setEmail(event.target.value.toUpperCase())} type="text" inputMode="text" autoCapitalize="characters" maxLength={7} placeholder="PC-1234" autoComplete="username" required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
       </label> : <>
         <FormField label="Full name" value={name} onChange={setName} autoComplete="name" required />
-        <FormField label="Mobile number" value={phone} onChange={setPhone} type="tel" autoComplete="tel" required />
+        <FormField label="Mobile number" value={phone} onChange={value => setPhone(value.replace(/[^0-9]/g, "").slice(0, 10))} type="tel" inputMode="numeric" autoComplete="tel" maxLength={10} required />
         <FormField label="City" value={city} onChange={setCity} autoComplete="address-level2" required />
         <FormField label="Area / locality" value={locality} onChange={setLocality} autoComplete="address-level3" />
         <FormField label="Address" value={address} onChange={setAddress} autoComplete="street-address" />
@@ -651,12 +668,12 @@ function RegisterOrLogin({ email, password, setEmail, setPassword, onSignIn, sig
   </div>;
 }
 
-function FormField({ label, value, onChange, type = "text", autoComplete, inputMode, required = false }: {
+function FormField({ label, value, onChange, type = "text", autoComplete, inputMode, maxLength, required = false }: {
   label: string; value: string; onChange: (value: string) => void; type?: "text" | "email" | "tel"; autoComplete?: string;
-  inputMode?: "text" | "numeric" | "tel" | "email"; required?: boolean;
+  inputMode?: "text" | "numeric" | "tel" | "email"; maxLength?: number; required?: boolean;
 }) {
   return <label className="mt-3 block text-xs font-bold text-slate-600">{label}
-    <input value={value} onChange={event => onChange(event.target.value)} type={type} autoComplete={autoComplete} inputMode={inputMode} required={required} className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
+    <input value={value} onChange={event => onChange(event.target.value)} type={type} autoComplete={autoComplete} inputMode={inputMode} maxLength={maxLength} required={required} className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
   </label>;
 }
 
