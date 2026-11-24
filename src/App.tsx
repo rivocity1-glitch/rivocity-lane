@@ -574,9 +574,10 @@ function RegisterOrLogin({ email, password, setEmail, setPassword, onSignIn, sig
   const [locality, setLocality] = useState(""); const [address, setAddress] = useState(""); const [pincode, setPincode] = useState("");
   const [lat, setLat] = useState<number | null>(null); const [lng, setLng] = useState<number | null>(null);
   const [message, setMessage] = useState(""); const [localError, setLocalError] = useState(""); const [submitting, setSubmitting] = useState(false);
+  const [showRegistrationReminder, setShowRegistrationReminder] = useState(false);
 
   const register = async (event: React.FormEvent) => {
-    event.preventDefault(); setMessage(""); setLocalError("");
+    event.preventDefault(); setMessage(""); setLocalError(""); setShowRegistrationReminder(false);
     if (!name.trim() || !phone.trim() || !city.trim() || !email.trim()) { setLocalError("Fill all required fields."); return; }
     if (!/^[0-9]{10}$/.test(phone)) { setLocalError("Mobile number must be exactly 10 digits."); return; }
     if (!/^[0-9]{4}$/.test(password)) { setLocalError("Choose a 4-digit PIN for new registrations."); return; }
@@ -605,6 +606,7 @@ function RegisterOrLogin({ email, password, setEmail, setPassword, onSignIn, sig
       }
       setMessage(data.session ? "Registration submitted. Your Picker ID is " + generatedId + ". Your profile is pending Admin approval." :
         "Registration submitted. Your Picker ID is " + generatedId + ". Check your email to confirm your account, then wait for Admin approval.");
+      setShowRegistrationReminder(true);
     } catch (registrationError: any) {
       setLocalError(registrationError?.message || "Registration failed. Please try again.");
     } finally { setSubmitting(false); }
@@ -640,6 +642,7 @@ function RegisterOrLogin({ email, password, setEmail, setPassword, onSignIn, sig
       <p className="mt-1 text-sm text-slate-500">{mode === "login" ? "Worker sign in" : "Register as a Picker"}</p>
       {(error || localError) ? <div role="alert" className="picker-action-button mt-4 break-words rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error || localError}</div> : null}
       {message ? <div role="status" className="picker-action-button mt-4 break-words rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</div> : null}
+      {showRegistrationReminder ? <div role="note" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900"><strong>Important:</strong> Take a screenshot of your Picker ID and remember your 4-digit PIN. You will need them to sign in later.</div> : null}
       {mode === "login" ? <label className="mt-5 block text-xs font-bold text-slate-600">Picker ID
         <input value={email} onChange={event => setEmail(event.target.value.toUpperCase())} type="text" inputMode="text" autoCapitalize="characters" maxLength={7} placeholder="PC-1234" autoComplete="username" required className="picker-action-button form-control mt-1 w-full rounded-xl border px-3" />
       </label> : <>
